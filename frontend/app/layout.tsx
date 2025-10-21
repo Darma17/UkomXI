@@ -2,11 +2,12 @@ import "./globals.css"
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import Navbar from "./components/Navbar"
+import Footer from "./components/Footer"
 
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Toko Buku Online",
+  title: "BukuKu",
   description: "Website penjualan buku terbaik",
   icons: {
     icon: "/favicon.ico",
@@ -23,8 +24,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.className} bg-white text-gray-800`}>
-        <Navbar />
+        {/* <Navbar /> */}
         <main className="min-h-screen">{children}</main>
+        {/* <Footer /> */}
       </body>
     </html>
   )

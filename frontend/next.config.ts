@@ -1,7 +1,28 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "www.duniailkom.com",
+      },
+      {
+        protocol: "http",
+        hostname: "localhost", // bisa tambahkan domain lain di sini
+        port: "8000",
+        pathname: "/storage/**",
+      },
+      {
+        protocol: "https",
+        hostname: "ebooks.gramedia.com",
+      },
+      {
+        protocol: "https",
+        hostname: "image.gramedia.net",
+      },
+    ],
+  },
 };
 
 export default nextConfig;

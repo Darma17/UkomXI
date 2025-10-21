@@ -28,12 +28,24 @@ class BookController extends Controller
             'description' => 'nullable|string',
             'price' => 'required|numeric',
             'stock' => 'required|integer',
-            'cover_image' => 'nullable|string',
+            'cover_image' => 'nullable|image|mimes:jpg,jpeg,png|max:2048', // ubah ke file image
         ]);
 
+        // Upload gambar jika ada
+        if ($request->hasFile('cover_image')) {
+            $path = $request->file('cover_image')->store('covers', 'public'); 
+            // hasil path misal: covers/namafile.jpg
+            $data['cover_image'] = $path;
+        }
+
         $book = Book::create($data);
+
+        // kembalikan full URL supaya bisa langsung diakses di React
+        $book->cover_image = $book->cover_image ? asset('storage/' . $book->cover_image) : null;
+
         return response()->json($book, 201);
     }
+
 
     public function update(Request $request, Book $book)
     {
