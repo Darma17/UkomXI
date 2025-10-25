@@ -17,6 +17,12 @@ return new class extends Migration
             $table->string('email')->unique();
             $table->string('password');
             $table->enum('role', ['customer', 'admin'])->default('customer');
+
+            // new columns for OTP flow and storing current token
+            $table->string('email_otp')->nullable();
+            $table->timestamp('email_otp_expires_at')->nullable();
+            $table->text('current_api_token')->nullable();
+
             $table->timestamps();
         });
     }

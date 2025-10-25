@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation"; // ✅ Tambahan penting
+import { usePathname, useRouter } from "next/navigation"; // added useRouter
 import { Menu, X, ShoppingCart, User, Search } from "lucide-react";
 
 export default function Navbar() {
@@ -12,7 +12,14 @@ export default function Navbar() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showLogin, setShowLogin] = useState(false);
 
-  const pathname = usePathname(); // ✅ deteksi halaman aktif
+  const pathname = usePathname();
+  const router = useRouter(); // router for redirect
+
+  // New: popup login form states
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginErrorMsg, setLoginErrorMsg] = useState("");
 
   useEffect(() => {
     // Hanya aktifkan efek scroll di halaman Home
@@ -26,12 +33,50 @@ export default function Navbar() {
     }
   }, [pathname]);
 
+  // New: auto-hide login popup error after 4s
+  useEffect(() => {
+    if (!loginErrorMsg) return;
+    const id = setTimeout(() => setLoginErrorMsg(""), 4000);
+    return () => clearTimeout(id);
+  }, [loginErrorMsg]);
+
+  // New: handle popup login submit (behavior same as SignIn)
+  async function handlePopupLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setLoginErrorMsg("");
+    setLoginLoading(true);
+
+    try {
+      const res = await fetch("http://127.0.0.1:8000/api/login/customer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setLoginErrorMsg(data.message || "Gagal masuk");
+        setLoginLoading(false);
+        return;
+      }
+
+      // success -> redirect to OTP page with email query and close popup
+      setShowLogin(false);
+      router.push(`/page/otp?email=${encodeURIComponent(loginEmail)}`);
+    } catch (err) {
+      setLoginErrorMsg("Network error, coba lagi");
+    } finally {
+      setLoginLoading(false);
+    }
+  }
+
   // === Style tergantung state ===
   const iconColor = scrolled ? "text-gray-800" : "text-white";
   const navbarBg = scrolled ? "bg-white shadow-md" : "bg-transparent";
   const textColor = scrolled ? "text-gray-800" : "text-white";
   const sidebarBg = scrolled ? "bg-white text-gray-800" : "bg-gray-900 text-white";
   const sidebarBorder = scrolled ? "border-gray-200" : "border-gray-700";
+  const image = scrolled ? "/images/logo.png" : "/images/logoPutih.png";
 
   return (
     <>
@@ -74,7 +119,7 @@ export default function Navbar() {
               <div className="absolute left-1/2 transform -translate-x-1/2">
                 <Link href="/" className="flex items-center justify-center">
                   <img
-                    src="/images/logo.png"
+                    src={image}
                     alt="Logo"
                     className="h-10 w-10 object-contain transition-transform duration-300 hover:scale-105"
                   />
@@ -105,13 +150,27 @@ export default function Navbar() {
 
                   {showLogin && (
                   <div className="absolute right-0 mt-1 w-80 bg-white text-gray-800 rounded-xl shadow-lg border border-gray-200 p-6 z-50 animate-fadeIn">
+                    {/* Top notification for popup errors */}
+                    {loginErrorMsg && (
+                      <div className="fixed left-1/2 transform -translate-x-1/2 top-4 z-50">
+                        <div className="bg-red-600 text-white px-6 py-2 rounded shadow-md animate-fadeIn">
+                          {loginErrorMsg}
+                        </div>
+                      </div>
+                    )}
+
                     <h2 className="text-lg font-semibold mb-4 text-center">MASUK</h2>
-                    <form className="space-y-4">
+
+                    {/* Changed: form is now controlled and submits via handlePopupLogin */}
+                    <form className="space-y-4" onSubmit={handlePopupLogin}>
                       <div>
                         <label className="text-sm font-medium">Alamat Email</label>
                         <input
                           type="email"
                           placeholder="Masukkan Email Anda"
+                          value={loginEmail}
+                          onChange={(e) => setLoginEmail(e.target.value)}
+                          required
                           className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-black focus:outline-none"
                         />
                       </div>
@@ -120,22 +179,25 @@ export default function Navbar() {
                         <input
                           type="password"
                           placeholder="Masukkan Password Anda"
+                          value={loginPassword}
+                          onChange={(e) => setLoginPassword(e.target.value)}
+                          required
                           className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-black focus:outline-none"
                         />
                       </div>
                       <div className="flex justify-between items-center text-sm">
-                        <Link href="#" className="text-blue-600 hover:underline">
+                        <Link href="/page/forgot-password" className="text-blue-600 hover:underline">
                           Lupa Password?
                         </Link>
                       </div>
-                      <Link href={""}>
-                        <button
-                          type="submit"
-                          className="cursor-pointer w-full bg-black text-white py-2 rounded-md font-medium hover:bg-gray-800 transition"
-                        >
-                          MASUK
-                        </button>
-                      </Link>
+
+                      <button
+                        type="submit"
+                        className="cursor-pointer w-full bg-black text-white py-2 rounded-md font-medium hover:bg-gray-800 transition disabled:opacity-60"
+                        disabled={loginLoading}
+                      >
+                        {loginLoading ? "Loading..." : "MASUK"}
+                      </button>
                     </form>
 
                     <div className="my-4 text-center text-sm text-gray-500">OR</div>

@@ -210,7 +210,11 @@ export default function HomePage() {
               >
                 <div className="relative w-full h-56 overflow-hidden">
                   <Image
-                    src={book.cover_image || "http://localhost:8000/storage/sampulBuku.png"}
+                    src={
+                      book.cover_image
+                        ? `http://localhost:8000/storage/${book.cover_image}`
+                        : "/images/dummyImage.jpg"
+                    }
                     alt={book.title}
                     fill
                     className={`object-contain px-2 pt-2 transition-opacity duration-300 ${

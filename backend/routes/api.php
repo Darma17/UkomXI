@@ -14,6 +14,7 @@ use App\Http\Controllers\WishlistController;
 use App\Http\Controllers\BookDiscountController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Mail;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
@@ -42,4 +43,21 @@ Route::apiResource('book-discounts', BookDiscountController::class);
 // Route tambahan (custom)
 Route::get('books-with-discount', [BookDiscountController::class, 'booksWithDiscount']);
 Route::delete('book-discounts/cleanup', [BookDiscountController::class, 'deactivateExpiredDiscounts']);
+
+
+// Authentication routes (login by role -> send OTP; verify OTP -> issue Sanctum token; logout)
+Route::post('login/customer', [UserController::class, 'loginCustomer']);
+Route::post('login/admin', [UserController::class, 'loginAdmin']);
+Route::post('verify-otp', [UserController::class, 'verifyOtp']);
+
+// NEW: forgot password / reset flow
+Route::post('forgot-password', [UserController::class, 'sendResetOtp']);
+Route::post('verify-reset-otp', [UserController::class, 'verifyResetOtp']);
+Route::post('reset-password', [UserController::class, 'resetPassword']);
+
+// NEW: register (request OTP -> verify OTP -> create account)
+Route::post('register/request', [UserController::class, 'sendRegisterOtp']);
+Route::post('register/verify', [UserController::class, 'verifyRegisterOtp']);
+
+Route::post('logout', [UserController::class, 'logout'])->middleware('auth:sanctum');
 
