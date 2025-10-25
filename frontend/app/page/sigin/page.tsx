@@ -152,11 +152,13 @@ export default function SignIn() {
 								})
 
 								if (res.status === 200) {
-								// Simpan token dari Laravel
-								localStorage.setItem("authToken", res.data.token)
-								router.push("/") // arahkan ke halaman utama
+									// Simpan token dari Laravel
+									localStorage.setItem("authToken", res.data.token)
+									// notify other listeners in same tab
+									window.dispatchEvent(new Event("authChanged"))
+									router.push("/") // arahkan ke halaman utama
 								} else {
-								setErrorMsg("Gagal login dengan Google atau akun Google belum terdaftar")
+									setErrorMsg("Gagal login dengan Google atau akun Google belum terdaftar")
 								}
 							} catch (err) {
 								console.error(err)

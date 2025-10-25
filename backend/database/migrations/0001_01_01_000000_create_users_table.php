@@ -23,6 +23,9 @@ return new class extends Migration
             $table->timestamp('email_otp_expires_at')->nullable();
             $table->text('current_api_token')->nullable();
 
+            // ADD: profile image filename (stored in storage/app/public/profile)
+            $table->string('profile_image')->nullable();
+
             $table->timestamps();
         });
     }

@@ -62,3 +62,6 @@ Route::post('register/verify', [UserController::class, 'verifyRegisterOtp']);
 
 Route::post('logout', [UserController::class, 'logout'])->middleware('auth:sanctum');
 
+// NEW: get current user's cart count (sum of quantities)
+Route::get('cart/count', [\App\Http\Controllers\CartController::class, 'count'])->middleware('auth:sanctum');
+

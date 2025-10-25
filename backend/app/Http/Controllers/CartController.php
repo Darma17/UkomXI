@@ -29,4 +29,22 @@ class CartController extends Controller
         $cart->delete();
         return response()->json(['message' => 'Cart deleted']);
     }
+
+    public function count(Request $request)
+    {
+        $user = $request->user();
+        if (! $user) {
+            return response()->json(['count' => 0]);
+        }
+
+        $cart = Cart::with('items')->where('user_id', $user->id)->first();
+        $total = 0;
+        if ($cart && $cart->items) {
+            foreach ($cart->items as $item) {
+                $total += (int) $item->quantity;
+            }
+        }
+
+        return response()->json(['count' => $total]);
+    }
 }

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation"; // added useRouter
 import { Menu, X, ShoppingCart, User, Search } from "lucide-react";
 import { GoogleLogin, GoogleOAuthProvider } from "@react-oauth/google"
-import axios from "axios"
+import axios from "axios";
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
@@ -13,6 +13,33 @@ export default function Navbar() {
   const [searchMode, setSearchMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showLogin, setShowLogin] = useState(false);
+
+  // NEW: track authentication state
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  // NEW: cart count state
+  const [cartCount, setCartCount] = useState(0);
+
+  // NEW: user profile and profile-menu state
+  const [profile, setProfile] = useState<{ name?: string; email?: string; profile_image?: string } | null>(null);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+
+  // NEW: reusable fetchCartCount so we can call it from handlers
+  const fetchCartCount = async () => {
+    const token = localStorage.getItem("authToken");
+    if (!token) {
+      setCartCount(0);
+      return;
+    }
+    try {
+      const res = await axios.get("http://127.0.0.1:8000/api/cart/count", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setCartCount(res?.data?.count || 0);
+    } catch (err) {
+      setCartCount(0);
+    }
+  };
 
   const pathname = usePathname();
   const router = useRouter(); // router for redirect
@@ -71,6 +98,113 @@ export default function Navbar() {
       setLoginLoading(false);
     }
   }
+
+  // Check auth token on mount and listen for changes (login/logout)
+  useEffect(() => {
+    const check = () => {
+      const tokenExists = !!localStorage.getItem("authToken");
+      setIsAuthenticated(tokenExists);
+      return tokenExists;
+    };
+
+    const loadProfile = async () => {
+      const token = localStorage.getItem("authToken");
+      if (!token) {
+        setProfile(null);
+        return;
+      }
+      try {
+        const res = await axios.get("http://127.0.0.1:8000/api/user", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setProfile(res?.data || null);
+      } catch (err) {
+        setProfile(null);
+      }
+    };
+
+    const tokenExists = check();
+    if (tokenExists) {
+      fetchCartCount();
+      loadProfile();
+    }
+
+    // handle storage (other tabs) and custom event (same tab)
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "authToken") {
+        const nowAuth = !!e.newValue;
+        setIsAuthenticated(nowAuth);
+        if (nowAuth) {
+          fetchCartCount();
+          loadProfile();
+        } else {
+          setCartCount(0);
+          setProfile(null);
+        }
+      }
+    };
+    const onAuthChanged = () => {
+      const nowAuth = !!localStorage.getItem("authToken");
+      setIsAuthenticated(nowAuth);
+      if (nowAuth) {
+        fetchCartCount();
+        loadProfile();
+      } else {
+        setCartCount(0);
+        setProfile(null);
+      }
+    };
+
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("authChanged", onAuthChanged);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("authChanged", onAuthChanged);
+    };
+  }, []);
+
+  // Optional: refresh cart count after login via this tab (e.g. after Google login)
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setCartCount(0);
+      return;
+    }
+    // fetch latest when isAuthenticated toggles true
+    const load = async () => {
+      const token = localStorage.getItem("authToken");
+      if (!token) return;
+      try {
+        const res = await axios.get("http://127.0.0.1:8000/api/cart/count", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setCartCount(res?.data?.count || 0);
+      } catch {
+        setCartCount(0);
+      }
+    };
+    load();
+  }, [isAuthenticated]);
+
+  // NEW: logout handler
+  const handleLogout = async () => {
+    const token = localStorage.getItem("authToken");
+    try {
+      if (token) {
+        await axios.post("http://127.0.0.1:8000/api/logout", {}, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      }
+    } catch {
+      // ignore errors but still clear client state
+    } finally {
+      localStorage.removeItem("authToken");
+      setIsAuthenticated(false);
+      setProfile(null);
+      setCartCount(0);
+      window.dispatchEvent(new Event("authChanged"));
+      router.push("/");
+    }
+  };
 
   // === Style tergantung state ===
   const iconColor = scrolled ? "text-gray-800" : "text-white";
@@ -135,116 +269,161 @@ export default function Navbar() {
                   <ShoppingCart
                     className={`w-6 h-6 transition-all duration-300 ${iconColor} group-hover:scale-110`}
                   />
-                  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs px-1.5 rounded-full">
-                    3
-                  </span>
+                  {/* show badge only when authenticated AND cartCount > 0 */}
+                  {isAuthenticated && cartCount > 0 && (
+                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs px-1.5 rounded-full">
+                      {cartCount}
+                    </span>
+                  )}
                 </Link>
 
-                {/* === User Icon + Popup === */}
-                <div
-                  className="relative group"
-                  onMouseEnter={() => setShowLogin(true)}
-                  onMouseLeave={() => setShowLogin(false)}
-                >
-                  <User
-                    className={`w-6 h-6 transition-all duration-300 ${iconColor} group-hover:scale-110 cursor-pointer`}
-                  />
+                {/* === User Icon + Profile Dropdown when authenticated === */}
+                {isAuthenticated ? (
+                  <div
+                    className="relative"
+                    onMouseEnter={() => setShowProfileMenu(true)}
+                    onMouseLeave={() => setShowProfileMenu(false)}
+                  >
+                    <button className={`focus:outline-none`}>
+                      <User className={`w-6 h-6 ${iconColor} cursor-pointer`} />
+                    </button>
 
-                  {showLogin && (
-                  <div className="absolute right-0 mt-1 w-80 bg-white text-gray-800 rounded-xl shadow-lg border border-gray-200 p-6 z-50 animate-fadeIn">
-                    {/* Top notification for popup errors */}
-                    {loginErrorMsg && (
-                      <div className="fixed left-1/2 transform -translate-x-1/2 top-4 z-50">
-                        <div className="bg-red-600 text-white px-6 py-2 rounded shadow-md animate-fadeIn">
-                          {loginErrorMsg}
+                    {showProfileMenu && (
+                      <div className="absolute right-0  w-56 bg-white text-gray-800 rounded-xl shadow-lg border border-gray-200 p-4 z-50">
+                        {/* avatar */}
+                        <div className="flex flex-col items-center">
+                          <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-gray-200 mb-3">
+                            <img
+                              src={
+                                profile && profile.profile_image
+                                  ? `http://127.0.0.1:8000/storage/profile/${profile.profile_image}`
+                                  : "/images/profile.png"
+                              }
+                              alt="avatar"
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          <div className="text-lg font-semibold text-gray-900">{profile?.name || ''}</div>
+                          <div className="text-sm text-gray-500 mb-3">{profile?.email || ''}</div>
+
+                          <button
+                            onClick={handleLogout}
+                            className="mt-1 w-full border border-red-500 text-red-500 py-2 rounded-md hover:bg-red-500 hover:text-white transition"
+                          >
+                            Logout
+                          </button>
                         </div>
                       </div>
                     )}
+                  </div>
+                ) : (
+                  // If not logged in: keep hover popup behavior
+                  <div
+                    className="relative group"
+                    onMouseEnter={() => setShowLogin(true)}
+                    onMouseLeave={() => setShowLogin(false)}
+                  >
+                    <User
+                      className={`w-6 h-6 transition-all duration-300 ${iconColor} group-hover:scale-110 cursor-pointer`}
+                    />
 
-                    <h2 className="text-lg font-semibold mb-4 text-center">MASUK</h2>
+                    {showLogin && (
+                      <div className="absolute right-0 mt-1 w-80 bg-white text-gray-800 rounded-xl shadow-lg border border-gray-200 p-6 z-50 animate-fadeIn">
+                        {/* Top notification for popup errors */}
+                        {loginErrorMsg && (
+                          <div className="fixed left-1/2 transform -translate-x-1/2 top-4 z-50">
+                            <div className="bg-red-600 text-white px-6 py-2 rounded shadow-md animate-fadeIn">
+                              {loginErrorMsg}
+                            </div>
+                          </div>
+                        )}
 
-                    {/* Changed: form is now controlled and submits via handlePopupLogin */}
-                    <form className="space-y-4" onSubmit={handlePopupLogin}>
-                      <div>
-                        <label className="text-sm font-medium">Alamat Email</label>
-                        <input
-                          type="email"
-                          placeholder="Masukkan Email Anda"
-                          value={loginEmail}
-                          onChange={(e) => setLoginEmail(e.target.value)}
-                          required
-                          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-black focus:outline-none"
-                        />
+                        <h2 className="text-lg font-semibold mb-4 text-center">MASUK</h2>
+
+                        {/* Changed: form is now controlled and submits via handlePopupLogin */}
+                        <form className="space-y-4" onSubmit={handlePopupLogin}>
+                          <div>
+                            <label className="text-sm font-medium">Alamat Email</label>
+                            <input
+                              type="email"
+                              placeholder="Masukkan Email Anda"
+                              value={loginEmail}
+                              onChange={(e) => setLoginEmail(e.target.value)}
+                              required
+                              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-black focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium">Password</label>
+                            <input
+                              type="password"
+                              placeholder="Masukkan Password Anda"
+                              value={loginPassword}
+                              onChange={(e) => setLoginPassword(e.target.value)}
+                              required
+                              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-black focus:outline-none"
+                            />
+                          </div>
+                          <div className="flex justify-between items-center text-sm">
+                            <Link href="/page/forgot-password" className="text-blue-600 hover:underline">
+                              Lupa Password?
+                            </Link>
+                          </div>
+
+                          <button
+                            type="submit"
+                            className="cursor-pointer w-full bg-black text-white py-2 rounded-md font-medium hover:bg-gray-800 transition disabled:opacity-60"
+                            disabled={loginLoading}
+                          >
+                            {loginLoading ? "Loading..." : "MASUK"}
+                          </button>
+                        </form>
+
+                        <div className="my-4 text-center text-sm text-gray-500">OR</div>
+
+                        {/* === TOMBOL GOOGLE LOGIN === */}
+                        <GoogleOAuthProvider clientId="764774487773-iikq8ssu0drtdijjha7n0139r8j27cpc.apps.googleusercontent.com">
+                          <GoogleLogin
+                            onSuccess={async (credentialResponse) => {
+                              try {
+                                const token = credentialResponse.credential
+                                const res = await axios.post("http://127.0.0.1:8000/api/google-login", { token })
+                                if (res.status === 200) {
+                                  // Simpan token dari Laravel
+                                  localStorage.setItem("authToken", res.data.token)
+                                  // Immediately update navbar state and cart badge (no refresh needed)
+                                  setIsAuthenticated(true)
+                                  await fetchCartCount()
+                                  // notify other listeners/tabs
+                                  window.dispatchEvent(new Event("authChanged"))
+                                  setShowLogin(false)
+                                  router.push("/") // arahkan ke halaman utama
+                                } else {
+                                  setLoginErrorMsg("Gagal login dengan Google atau akun Google belum terdaftar")
+                                }
+                              } catch (err) {
+                                console.error(err)
+                                setLoginErrorMsg("Gagal login dengan Google atau akun Google belum terdaftar")
+                              }
+                            }}
+                            onError={() => setLoginErrorMsg("Login Google gagal")}
+                          />
+                        </GoogleOAuthProvider>
+
+                        {/* === TEKS BUAT AKUN === */}
+                        <div className="text-center mt-4 text-sm text-gray-500">
+                          Belum Punya Akun?{" "}
+                          <Link
+                            href="../page/create-account"
+                            className="text-black font-medium hover:underline"
+                          >
+                            Buat Akun
+                          </Link>
+                        </div>
                       </div>
-                      <div>
-                        <label className="text-sm font-medium">Password</label>
-                        <input
-                          type="password"
-                          placeholder="Masukkan Password Anda"
-                          value={loginPassword}
-                          onChange={(e) => setLoginPassword(e.target.value)}
-                          required
-                          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-black focus:outline-none"
-                        />
-                      </div>
-                      <div className="flex justify-between items-center text-sm">
-                        <Link href="/page/forgot-password" className="text-blue-600 hover:underline">
-                          Lupa Password?
-                        </Link>
-                      </div>
-
-                      <button
-                        type="submit"
-                        className="cursor-pointer w-full bg-black text-white py-2 rounded-md font-medium hover:bg-gray-800 transition disabled:opacity-60"
-                        disabled={loginLoading}
-                      >
-                        {loginLoading ? "Loading..." : "MASUK"}
-                      </button>
-                    </form>
-
-                    <div className="my-4 text-center text-sm text-gray-500">OR</div>
-
-                    {/* === TOMBOL GOOGLE LOGIN === */}
-                    <GoogleOAuthProvider clientId="764774487773-iikq8ssu0drtdijjha7n0139r8j27cpc.apps.googleusercontent.com">
-                      <GoogleLogin
-                        onSuccess={async (credentialResponse) => {
-                        try {
-                          const token = credentialResponse.credential
-
-                          const res = await axios.post("http://127.0.0.1:8000/api/google-login", {
-                          token,
-                          })
-
-                          if (res.status === 200) {
-                          // Simpan token dari Laravel
-                          localStorage.setItem("authToken", res.data.token)
-                          router.push("/") // arahkan ke halaman utama
-                          } else {
-                          setLoginErrorMsg("Gagal login dengan Google atau akun Google belum terdaftar")
-                          }
-                        } catch (err) {
-                          console.error(err)
-                          setLoginErrorMsg("Gagal login dengan Google atau akun Google belum terdaftar")
-                        }
-                        }}
-                        onError={() => setLoginErrorMsg("Login Google gagal")}
-                      />
-                    </GoogleOAuthProvider>
-
-                    {/* === TEKS BUAT AKUN === */}
-                    <div className="text-center mt-4 text-sm text-gray-500">
-                      Belum Punya Akun?{" "}
-                      <Link
-                        href="../page/create-account"
-                        className="text-black font-medium hover:underline"
-                      >
-                        Buat Akun
-                      </Link>
-                    </div>
+                    )}
                   </div>
                 )}
-
-                </div>
 
                 {/* === Search Icon === */}
                 <button

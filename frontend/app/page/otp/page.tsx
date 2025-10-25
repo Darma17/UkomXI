@@ -79,6 +79,8 @@ export default function OtpPage() {
 				// success -> store token and redirect
 				if (data.token) {
 					localStorage.setItem('authToken', data.token)
+					// notify navbar / other listeners immediately
+					window.dispatchEvent(new Event('authChanged'))
 				}
 				router.push('/')
 			}
