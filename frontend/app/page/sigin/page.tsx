@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { GoogleLogin, GoogleOAuthProvider } from "@react-oauth/google"
+import axios from "axios"
 
 export default function SignIn() {
 	const router = useRouter()
@@ -132,24 +134,38 @@ export default function SignIn() {
 					<button
 						type="submit"
 						disabled={loading}
-						className="w-full py-2 bg-white text-black rounded-md font-semibold hover:bg-gray-200 transition disabled:opacity-60"
+						className="w-full py-2 mb-0 bg-white text-black rounded-md font-semibold hover:bg-gray-200 transition disabled:opacity-60"
 					>
 						{loading ? 'Loading...' : 'Masuk'}
 					</button>
 
-					<div className="my-4 text-center text-sm text-gray-500">OR</div>
+					<div className="my-3 text-center text-sm text-gray-500">OR</div>
 
-					<button
-						type="button"
-						className="w-full flex items-center justify-center gap-2 border border-white/40 py-2 rounded-md font-medium hover:bg-white/10 transition"
-					>
-						<img
-							src="https://www.svgrepo.com/show/355037/google.svg"
-							alt="Google Icon"
-							className="w-5 h-5"
+					<GoogleOAuthProvider clientId="764774487773-iikq8ssu0drtdijjha7n0139r8j27cpc.apps.googleusercontent.com">
+						<GoogleLogin
+							onSuccess={async (credentialResponse) => {
+							try {
+								const token = credentialResponse.credential
+
+								const res = await axios.post("http://127.0.0.1:8000/api/google-login", {
+								token,
+								})
+
+								if (res.status === 200) {
+								// Simpan token dari Laravel
+								localStorage.setItem("authToken", res.data.token)
+								router.push("/") // arahkan ke halaman utama
+								} else {
+								setErrorMsg("Gagal login dengan Google atau akun Google belum terdaftar")
+								}
+							} catch (err) {
+								console.error(err)
+								setErrorMsg("Gagal login dengan Google atau akun Google belum terdaftar")
+							}
+							}}
+							onError={() => setErrorMsg("Login Google gagal")}
 						/>
-						Masuk dengan Google
-					</button>
+					</GoogleOAuthProvider>
 				</form>
 
 				{/* === CREATE ACCOUNT LINK === */}

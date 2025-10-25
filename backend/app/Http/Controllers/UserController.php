@@ -409,4 +409,40 @@ class UserController extends Controller
 
         return response()->json(['message' => 'Pendaftaran berhasil. Silakan login'], 201);
     }
+    public function googleLogin(Request $request)
+    {
+        $request->validate([
+            'token' => 'required|string',
+        ]);
+
+        // Verifikasi token Google
+        $response = file_get_contents('https://oauth2.googleapis.com/tokeninfo?id_token=' . $request->token);
+        $googleUser = json_decode($response, true);
+
+        if (!isset($googleUser['email'])) {
+            return response()->json(['message' => 'Token Google tidak valid'], 401);
+        }
+
+        $email = $googleUser['email'];
+
+        // Cek apakah user sudah ada
+        $user = \App\Models\User::where('email', $email)->first();
+
+        if (!$user) {
+            return response()->json([
+                'message' => 'Akun Google Anda belum terdaftar di sistem kami'
+            ], 403);
+        }
+
+        // Buat token Sanctum
+        $token = $user->createToken('google-login')->plainTextToken;
+
+        return response()->json([
+            'message' => 'Login Google berhasil',
+            'user' => $user,
+            'token' => $token,
+        ]);
+    }
+
 }
+

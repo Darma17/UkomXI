@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation"; // added useRouter
 import { Menu, X, ShoppingCart, User, Search } from "lucide-react";
+import { GoogleLogin, GoogleOAuthProvider } from "@react-oauth/google"
+import axios from "axios"
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
@@ -203,17 +205,31 @@ export default function Navbar() {
                     <div className="my-4 text-center text-sm text-gray-500">OR</div>
 
                     {/* === TOMBOL GOOGLE LOGIN === */}
-                    <button
-                      type="button"
-                      className="w-full flex items-center justify-center border border-gray-400 py-2 rounded-md text-sm font-medium hover:bg-gray-100 transition gap-2"
-                    >
-                      <img
-                        src="https://www.svgrepo.com/show/355037/google.svg"
-                        alt="Google Icon"
-                        className="w-5 h-5"
+                    <GoogleOAuthProvider clientId="764774487773-iikq8ssu0drtdijjha7n0139r8j27cpc.apps.googleusercontent.com">
+                      <GoogleLogin
+                        onSuccess={async (credentialResponse) => {
+                        try {
+                          const token = credentialResponse.credential
+
+                          const res = await axios.post("http://127.0.0.1:8000/api/google-login", {
+                          token,
+                          })
+
+                          if (res.status === 200) {
+                          // Simpan token dari Laravel
+                          localStorage.setItem("authToken", res.data.token)
+                          router.push("/") // arahkan ke halaman utama
+                          } else {
+                          setLoginErrorMsg("Gagal login dengan Google atau akun Google belum terdaftar")
+                          }
+                        } catch (err) {
+                          console.error(err)
+                          setLoginErrorMsg("Gagal login dengan Google atau akun Google belum terdaftar")
+                        }
+                        }}
+                        onError={() => setLoginErrorMsg("Login Google gagal")}
                       />
-                      Masuk dengan Google
-                    </button>
+                    </GoogleOAuthProvider>
 
                     {/* === TEKS BUAT AKUN === */}
                     <div className="text-center mt-4 text-sm text-gray-500">

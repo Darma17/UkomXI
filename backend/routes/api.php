@@ -49,6 +49,7 @@ Route::delete('book-discounts/cleanup', [BookDiscountController::class, 'deactiv
 Route::post('login/customer', [UserController::class, 'loginCustomer']);
 Route::post('login/admin', [UserController::class, 'loginAdmin']);
 Route::post('verify-otp', [UserController::class, 'verifyOtp']);
+Route::post('/google-login', [UserController::class, 'googleLogin']);
 
 // NEW: forgot password / reset flow
 Route::post('forgot-password', [UserController::class, 'sendResetOtp']);
