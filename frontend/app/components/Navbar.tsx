@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation"; // added useRouter
 import { Menu, X, ShoppingCart, User, Search } from "lucide-react";
@@ -12,6 +12,9 @@ export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [searchMode, setSearchMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [suggestions, setSuggestions] = useState<Array<{ id: number; title: string; cover_image?: string | null; price?: number }>>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestLoading, setSuggestLoading] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
 
   // NEW: track authentication state
@@ -49,6 +52,8 @@ export default function Navbar() {
   const [loginPassword, setLoginPassword] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginErrorMsg, setLoginErrorMsg] = useState("");
+
+  const suggestDebounceRef = useRef<number | null>(null);
 
   useEffect(() => {
     // Hanya aktifkan efek scroll di halaman Home
@@ -96,6 +101,74 @@ export default function Navbar() {
       setLoginErrorMsg("Network error, coba lagi");
     } finally {
       setLoginLoading(false);
+    }
+  }
+
+  // Fetch suggestions with debounce whenever searchQuery changes and searchMode active
+  useEffect(() => {
+    if (!searchMode) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      if (suggestDebounceRef.current) window.clearTimeout(suggestDebounceRef.current);
+      return;
+    }
+
+    // always show suggestions for even 1 character
+    if (suggestDebounceRef.current) window.clearTimeout(suggestDebounceRef.current);
+    suggestDebounceRef.current = window.setTimeout(async () => {
+      const q = (searchQuery || "").trim();
+      if (q.length === 0) {
+        setSuggestions([]);
+        setShowSuggestions(false);
+        setSuggestLoading(false);
+        return;
+      }
+      setSuggestLoading(true);
+      try {
+        // prefix=1 for suggestion; limit small
+        const res = await fetch(`http://127.0.0.1:8000/api/books?q=${encodeURIComponent(q)}&limit=6&prefix=1`);
+        if (!res.ok) {
+          setSuggestions([]);
+          setShowSuggestions(false);
+          setSuggestLoading(false);
+          return;
+        }
+        const data = await res.json();
+        // map to minimal shape
+        const items = (data || []).map((b: any) => ({
+          id: b.id,
+          title: b.title,
+          cover_image: b.cover_image ?? null,
+          price: b.price ?? 0,
+        }));
+        setSuggestions(items);
+        setShowSuggestions(items.length > 0);
+      } catch (e) {
+        setSuggestions([]);
+        setShowSuggestions(false);
+      } finally {
+        setSuggestLoading(false);
+      }
+    }, 220); // debounce 220ms
+
+    return () => {
+      if (suggestDebounceRef.current) window.clearTimeout(suggestDebounceRef.current);
+    };
+  }, [searchQuery, searchMode]);
+
+  // handle keyboard in search input
+  function handleSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const q = (searchQuery || "").trim();
+      if (!q) return;
+      // navigate to search page with query
+      setSearchMode(false);
+      setShowSuggestions(false);
+      router.push(`/page/search?query=${encodeURIComponent(q)}`);
+    } else if (e.key === "Escape") {
+      setSearchMode(false);
+      setShowSuggestions(false);
     }
   }
 
@@ -223,7 +296,7 @@ export default function Navbar() {
         <div className="flex items-center justify-between px-6 py-4 relative">
           {/* === SEARCH MODE === */}
           {searchMode ? (
-            <div className="flex justify-center items-center w-full">
+            <div className="flex justify-center items-start w-full relative">
               <div className="flex items-center bg-white border border-gray-300 rounded-full px-4 py-2 w-[50%] max-w-xl shadow-md">
                 <Search className="w-5 h-5 text-gray-600 mr-3" />
                 <input
@@ -231,13 +304,63 @@ export default function Navbar() {
                   placeholder="Cari buku..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={handleSearchKeyDown}
+                  onFocus={() => { if (suggestions.length) setShowSuggestions(true) }}
                   className="flex-1 bg-transparent outline-none text-gray-800 text-sm"
                   autoFocus
                 />
-                <button onClick={() => setSearchMode(false)} className="cursor-pointer">
+                <button onClick={() => { setSearchMode(false); setShowSuggestions(false); }} className="cursor-pointer">
                   <X className="w-5 h-5 text-gray-700 hover:text-red-500 transition" />
                 </button>
               </div>
+
+              {/* Suggestions dropdown */}
+              {showSuggestions && (
+                <div className="absolute top-[56px] w-[50%] max-w-xl bg-white border border-gray-200 rounded-md shadow-lg z-50">
+                  <div className="py-1">
+                    {suggestLoading && <div className="px-4 py-2 text-sm text-gray-500">Mencari...</div>}
+                    {!suggestLoading && suggestions.length === 0 && <div className="px-4 py-2 text-sm text-gray-500">Tidak ada hasil</div>}
+                    {!suggestLoading && suggestions.map(s => (
+                      <div
+                        key={s.id}
+                        onMouseDown={(e) => { // prevent input blur before click
+                          e.preventDefault();
+                          setSearchMode(false);
+                          setShowSuggestions(false);
+                          router.push(`/page/detail-buku?id=${s.id}`);
+                        }}
+                        className="cursor-pointer px-3 py-2 hover:bg-gray-100 flex items-center gap-3"
+                      >
+                        <div className="w-12 h-14 flex-shrink-0 bg-gray-100 rounded overflow-hidden">
+                          <img
+                            src={ s.cover_image ? `http://localhost:8000/storage/${s.cover_image}` : '/images/dummyImage.jpg' }
+                            alt={s.title}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-gray-800 truncate">{s.title}</div>
+                          <div className="text-xs text-gray-500 mt-1">Rp {Number(s.price || 0).toLocaleString('id-ID')}</div>
+                        </div>
+                      </div>
+                    ))}
+                    {/* "Search for" quick action */}
+                    {!suggestLoading && searchQuery.trim() !== '' && (
+                      <div
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setSearchMode(false);
+                          setShowSuggestions(false);
+                          router.push(`/page/search?query=${encodeURIComponent(searchQuery.trim())}`);
+                        }}
+                        className="cursor-pointer px-4 py-2 border-t text-sm text-gray-700 hover:bg-gray-50"
+                      >
+                        Cari "{searchQuery.trim()}"
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <>

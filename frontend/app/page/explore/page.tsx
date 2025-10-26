@@ -7,6 +7,8 @@ import Navbar from '@/app/components/Navbar'
 import Footer from '@/app/components/Footer'
 import api from '../../api/api'
 import { ShoppingCart } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import axios from 'axios'
 
 // ...existing interfaces...
 interface Book {
@@ -49,6 +51,14 @@ export default function ExplorePage() {
   const [priceRange, setPriceRange] = useState({ min: 0, max: 1000000 })
   const [hoveredId, setHoveredId] = useState<number | null>(null)
   const [cartClicked, setCartClicked] = useState<Record<number, boolean>>({})
+
+  // NEW: modal state & feedback
+  const [showLoginModal, setShowLoginModal] = useState(false)
+  const [pendingBookId, setPendingBookId] = useState<number | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [successMsg, setSuccessMsg] = useState('')
+
+  const router = useRouter()
 
   // Fetch books from backend using api.js
   useEffect(() => {
@@ -154,10 +164,36 @@ export default function ExplorePage() {
     }
   }
 
-  const handleCartClick = (e: React.MouseEvent<HTMLButtonElement>, id: number) => {
+  // UPDATED: handleCartClick now performs auth check / API call
+  const handleCartClick = async (e: React.MouseEvent<HTMLButtonElement>, id: number) => {
     e.preventDefault()
     e.stopPropagation()
-    setCartClicked(prev => ({ ...prev, [id]: !prev[id] }))
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null
+    if (!token) {
+      setPendingBookId(id)
+      setShowLoginModal(true)
+      return
+    }
+
+    setAdding(true)
+    try {
+      const res = await api.post('/cart/add-item', { book_id: id, quantity: 1 })
+      setSuccessMsg('Berhasil ditambahkan ke keranjang')
+      // notify navbar to refresh badge
+      window.dispatchEvent(new Event('authChanged'))
+      setTimeout(() => setSuccessMsg(''), 2000)
+    } catch (err) {
+      console.error(err)
+      // if unauthorized, prompt login
+      if (axios.isAxiosError(err) && err.response?.status === 401) {
+        setPendingBookId(id)
+        setShowLoginModal(true)
+      }
+    } finally {
+      setAdding(false)
+      setCartClicked(prev => ({ ...prev, [id]: true }))
+    }
   }
 
   // Apply filters action (from UI button)
@@ -188,6 +224,27 @@ export default function ExplorePage() {
   return (
     <>
       <Navbar />
+      {showLoginModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setShowLoginModal(false)} />
+          <div className="relative bg-white rounded-xl p-6 w-[90%] max-w-md z-60 text-center">
+            <div className="mx-auto w-12 h-12 rounded-full bg-red-500 text-white flex items-center justify-center text-xl font-bold mb-4">X</div>
+            <p className="text-gray-800 mb-4">Untuk menambahkan ke keranjang, silakan login terlebih dahulu.</p>
+            <div className="flex justify-center gap-3">
+              <button onClick={() => { setShowLoginModal(false); router.push('/page/sigin') }} className="px-4 py-2 bg-black text-white rounded-md">OK</button>
+              <button onClick={() => setShowLoginModal(false)} className="px-4 py-2 border rounded-md">Batal</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* optional success toast */}
+      {successMsg && (
+        <div className="fixed left-1/2 -translate-x-1/2 top-6 z-50">
+          <div className="bg-green-600 text-white px-6 py-2 rounded">{successMsg}</div>
+        </div>
+      )}
+
       <div className="min-h-screen bg-white">
         <div className="px-6 py-10 mt-10">
           {/* === HEADER === */}

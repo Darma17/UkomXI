@@ -17,7 +17,8 @@ return new class extends Migration
             $table->string('order_code')->unique();
             $table->foreignId('discount_id')->nullable()->constrained('discounts')->nullOnDelete();
             $table->decimal('total_price', 10, 2);
-            $table->enum('status', ['pending', 'paid', 'shipped', 'completed', 'cancelled'])->default('pending');
+            // allowed statuses: proses, diantar, selesai
+            $table->enum('status', ['proses', 'diantar', 'selesai', 'cancelled'])->default('proses');
             $table->timestamps();
         });
     }

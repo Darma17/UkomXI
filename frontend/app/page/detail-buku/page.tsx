@@ -4,10 +4,11 @@ import React, { useEffect, useState, useRef } from 'react'
 import Image from 'next/image'
 import Navbar from '@/app/components/Navbar'
 import Footer from '@/app/components/Footer'
-import api from '../../api/api' // axios instance
-import { useSearchParams } from 'next/navigation'
+import api from '../../api/api'
+import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ShoppingCart, ChevronDown } from 'lucide-react'
+import axios from 'axios'
 
 interface Book {
   id: number
@@ -40,6 +41,9 @@ export default function ProductDetail() {
   const [recommendations, setRecommendations] = useState<Book[]>([])
   const [quantity, setQuantity] = useState<number>(1)
   const [addedMsg, setAddedMsg] = useState<string | null>(null)
+  const [showLoginModal, setShowLoginModal] = useState(false)
+  const [adding, setAdding] = useState(false)
+  const [successMsg, setSuccessMsg] = useState('')
 
   // NEW: zoom state + ref for image container
   const [isZoom, setIsZoom] = useState(false)
@@ -51,16 +55,29 @@ export default function ProductDetail() {
   const [reviewsCount, setReviewsCount] = useState(0)
   const [avgRating, setAvgRating] = useState<number | null>(null)
 
-  const handleAddToCart = () => {
+  const router = useRouter()
+
+  const handleAddToCart = async () => {
     if (!book) return
+    const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null
+    if (!token) {
+      setShowLoginModal(true)
+      return
+    }
+
+    setAdding(true)
     try {
-      const existing = JSON.parse(localStorage.getItem('pendingCart') || '[]')
-      existing.push({ book_id: book.id, quantity, price: book.price })
-      localStorage.setItem('pendingCart', JSON.stringify(existing))
-      setAddedMsg('Berhasil ditambahkan ke keranjang sementara')
+      await api.post('/cart/add-item', { book_id: book.id, quantity })
+      setAddedMsg('Berhasil ditambahkan ke keranjang')
+      window.dispatchEvent(new Event('authChanged'))
       setTimeout(() => setAddedMsg(null), 2000)
-    } catch (e) {
-      console.error('Failed to add to pending cart', e)
+    } catch (err) {
+      console.error(err)
+      if (axios.isAxiosError(err) && err.response?.status === 401) {
+        setShowLoginModal(true)
+      }
+    } finally {
+      setAdding(false)
     }
   }
 
@@ -162,6 +179,29 @@ export default function ProductDetail() {
   return (
     <>
       <Navbar />
+      {showLoginModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setShowLoginModal(false)} />
+          <div className="relative bg-white rounded-xl p-6 w-[90%] max-w-md z-60 text-center">
+            <div className="mx-auto w-12 h-12 rounded-full bg-red-500 text-white flex items-center justify-center text-xl font-bold mb-4">X</div>
+            <p className="text-gray-800 mb-4">Untuk menambahkan ke keranjang, silakan login terlebih dahulu.</p>
+            <div className="flex justify-center gap-3">
+              <button onClick={() => { setShowLoginModal(false); router.push('/page/sigin') }} className="px-4 py-2 bg-black text-white rounded-md">OK</button>
+              <button onClick={() => setShowLoginModal(false)} className="px-4 py-2 border rounded-md text-black">Batal</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FEEDBACK */}
+              {addedMsg && 
+                <div className="fixed left-1/2 transform -translate-x-1/2 top-4 z-50">
+                  <div className="bg-green-500 text-white text-sm font-semibold py-3 px-4 rounded-lg shadow-md">
+                    {addedMsg}
+                  </div>
+                </div>
+              }
+
       <div className="min-h-screen bg-white text-gray-900 mt-10">
         <div className="max-w-6xl mx-auto px-6 py-10 grid grid-cols-1 md:grid-cols-2 gap-10">
           {/* IMAGE */}
@@ -223,8 +263,7 @@ export default function ProductDetail() {
                 </div>
               </div>
 
-              {/* FEEDBACK */}
-              {addedMsg && <div className="mb-4 text-sm text-green-600">{addedMsg}</div>}
+              
 
               <div className="flex items-center gap-4">
                 <button

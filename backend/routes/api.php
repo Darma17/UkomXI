@@ -12,6 +12,7 @@ use App\Http\Controllers\OrderItemController;
 use App\Http\Controllers\ReviewController;
 use App\Http\Controllers\WishlistController;
 use App\Http\Controllers\BookDiscountController;
+use App\Http\Controllers\CheckoutController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Mail;
@@ -64,4 +65,16 @@ Route::post('logout', [UserController::class, 'logout'])->middleware('auth:sanct
 
 // NEW: get current user's cart count (sum of quantities)
 Route::get('cart/count', [\App\Http\Controllers\CartController::class, 'count'])->middleware('auth:sanctum');
+
+// NEW: add item to user's cart (create cart if missing)
+Route::post('cart/add-item', [CartController::class, 'addItem'])->middleware('auth:sanctum');
+
+// NEW: checkout via Midtrans (sandbox)
+Route::post('checkout/midtrans', [CheckoutController::class, 'midtrans'])->middleware('auth:sanctum');
+
+// NEW: complete order after frontend-confirmed payment
+Route::post('checkout/complete', [CheckoutController::class, 'complete'])->middleware('auth:sanctum');
+
+// Midtrans notification (no auth) — Midtrans will POST here
+Route::post('checkout/midtrans/notification', [CheckoutController::class, 'notification']);
 

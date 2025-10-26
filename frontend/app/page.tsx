@@ -7,6 +7,9 @@ import { AnimatePresence, motion } from "framer-motion"
 import { ChevronLeft, ChevronRight, ShoppingCart } from "lucide-react"
 import Navbar from "./components/Navbar"
 import Footer from "./components/Footer"
+import api from './api/api' // add axios instance
+import axios from 'axios'
+import { useRouter } from 'next/navigation'
 
 // Interface untuk tipe data
 interface FeaturedProduct {
@@ -53,6 +56,11 @@ export default function HomePage() {
   const [highlightBooks, setHighlightBooks] = useState<Book[]>([])
   const [hoveredBook, setHoveredBook] = useState<number | null>(null)
   const [cartClicked, setCartClicked] = useState<Record<number, boolean>>({})
+  const router = useRouter()
+  const [showLoginModal, setShowLoginModal] = useState(false)
+  const [pendingBookId, setPendingBookId] = useState<number | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [successMsg, setSuccessMsg] = useState('')
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -88,13 +96,33 @@ export default function HomePage() {
     ? scrollPos < (scrollRef.current.scrollWidth - scrollRef.current.clientWidth) - 10
     : true
 
-  const handleCartClick = (e: React.MouseEvent<HTMLButtonElement>, bookId: number) => {
+  const handleCartClick = async (e: React.MouseEvent<HTMLButtonElement>, bookId: number) => {
     e.preventDefault()
     e.stopPropagation()
-    setCartClicked(prev => ({
-      ...prev,
-      [bookId]: !prev[bookId]
-    }))
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null
+    if (!token) {
+      setPendingBookId(bookId)
+      setShowLoginModal(true)
+      return
+    }
+
+    setAdding(true)
+    try {
+      await api.post('/cart/add-item', { book_id: bookId, quantity: 1 })
+      setSuccessMsg('Berhasil ditambahkan ke keranjang')
+      window.dispatchEvent(new Event('authChanged'))
+      setTimeout(() => setSuccessMsg(''), 2000)
+    } catch (err) {
+      console.error(err)
+      if (axios.isAxiosError(err) && err.response?.status === 401) {
+        setPendingBookId(bookId)
+        setShowLoginModal(true)
+      }
+    } finally {
+      setAdding(false)
+      setCartClicked(prev => ({ ...prev, [bookId]: true }))
+    }
   }
 
   return (
@@ -335,7 +363,7 @@ export default function HomePage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
             {/* PRODUK 1 */}
             <Link
-              href="/page/detail-buku"
+              href="/page/detail-buku?id=22"
               className="relative overflow-hidden rounded-xl group shadow-lg"
             >
               <Image
@@ -349,7 +377,7 @@ export default function HomePage() {
 
             {/* PRODUK 2 */}
             <Link
-              href="/page/detail-buku"
+              href="/page/detail-buku?id=21"
               className="relative overflow-hidden rounded-xl group shadow-lg"
             >
               <Image
@@ -363,7 +391,7 @@ export default function HomePage() {
 
             {/* PRODUK 3 */}
             <Link
-              href="/page/detail-buku"
+              href="/page/detail-buku?id=51"
               className="relative overflow-hidden rounded-xl group shadow-lg"
             >
               <Image
@@ -420,6 +448,30 @@ export default function HomePage() {
             </div>
           </div>
         </section>
+
+        {/* Login Modal */}
+        {showLoginModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/60" onClick={() => setShowLoginModal(false)} />
+            <div className="relative bg-white rounded-xl p-6 w-[90%] max-w-md z-60 text-center">
+              <div className="mx-auto w-12 h-12 rounded-full bg-red-500 text-white flex items-center justify-center text-xl font-bold mb-4">X</div>
+              <p className="text-gray-800 mb-4">Untuk menambahkan ke keranjang, silakan login terlebih dahulu.</p>
+              <div className="flex justify-center gap-3">
+                <button onClick={() => { setShowLoginModal(false); router.push('/page/sigin') }} className="px-4 py-2 bg-black text-white rounded-md">OK</button>
+                <button onClick={() => setShowLoginModal(false)} className="px-4 py-2 border rounded-md text-black">Batal</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Success Toast */}
+        {successMsg && (
+          <div className="fixed left-1/2 transform -translate-x-1/2 top-4 z-50">
+            <div className="bg-green-500 text-white text-sm font-semibold py-3 px-4 rounded-lg shadow-md">
+              {successMsg}
+            </div>
+          </div>
+        )}
       </main>
       <Footer />
     </>

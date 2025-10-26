@@ -7,9 +7,30 @@ use Illuminate\Http\Request;
 
 class BookController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        return response()->json(Book::with('category')->get());
+        // Support search suggestions and general search via ?q=... (&limit=5,&prefix=1)
+        $q = $request->query('q');
+        $limit = (int) $request->query('limit', 0); // 0 means no limit
+        $prefix = $request->query('prefix', null); // if present -> prefix search
+
+        $query = Book::with('category');
+        if ($q !== null && $q !== '') {
+            $q = trim($q);
+            if ($prefix) {
+                // suggestions: titles starting with q (case-insensitive)
+                $query->where('title', 'like', $q . '%');
+            } else {
+                // general search: anywhere in title
+                $query->where('title', 'like', '%' . $q . '%');
+            }
+        }
+
+        if ($limit > 0) {
+            $query->limit($limit);
+        }
+
+        return response()->json($query->get());
     }
 
     public function show(Book $book)
