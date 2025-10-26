@@ -284,12 +284,10 @@ export default function Navbar() {
                     onMouseEnter={() => setShowProfileMenu(true)}
                     onMouseLeave={() => setShowProfileMenu(false)}
                   >
-                    <button className={`focus:outline-none`}>
-                      <User className={`w-6 h-6 ${iconColor} cursor-pointer`} />
-                    </button>
+                    <User className={`w-6 h-6 ${iconColor} cursor-pointer`} />
 
                     {showProfileMenu && (
-                      <div className="absolute right-0  w-56 bg-white text-gray-800 rounded-xl shadow-lg border border-gray-200 p-4 z-50">
+                      <div className="absolute right-0 mt-1 w-56 bg-white text-gray-800 rounded-xl shadow-lg border border-gray-200 p-4 z-50">
                         {/* avatar */}
                         <div className="flex flex-col items-center">
                           <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-gray-200 mb-3">

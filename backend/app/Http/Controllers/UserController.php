@@ -116,7 +116,7 @@ class UserController extends Controller
                   <div style="display:inline-block; margin:20px 0; padding:18px 26px; border-radius:8px; background:linear-gradient(90deg,#fafafa,#f0f3f7); border:1px solid #e6ecf1;">
                     <span style="font-size:28px; letter-spacing:4px; font-weight:700; color:#111;">' . $otp . '</span>
                   </div>
-                  <p style="color:#999; font-size:13px; margin:10px 0 0;">kode ini berlaku selama 5 menit. Kalau kami tidak meminta kode ini, tolong abaikan.</p>
+                  <p style="color:#999; font-size:13px; margin:10px 0 0;">kode ini berlaku selama 5 menit. Kalau kamu tidak meminta kode ini, tolong abaikan.</p>
                   <hr style="border:none; height:1px; background:#eef2f6; margin:20px 0;" />
                   <p style="font-size:12px; color:#b0b8c1; margin:0;">Butuh bantuan? Balas email ini atau hubungi kami.</p>
                 </div>

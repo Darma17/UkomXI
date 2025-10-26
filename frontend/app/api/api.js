@@ -1,25 +1,27 @@
 import axios from 'axios';
 
-const token = localStorage.getItem('token');
-
 const api = axios.create({
     baseURL: 'http://localhost:8000/api',
     headers: {
         Accept: 'application/json',
-        Authorization: `Bearer ${token}`,
     },
 });
 
 api.interceptors.request.use(
     (config) => {
-        const token = localStorage.getItem('token');
-        if (token) {
-            config.headers.Authorization = `Bearer ${token}`;
+        if (typeof window !== 'undefined') {
+            const token = localStorage.getItem('authToken');
+            if (token) {
+                config.headers = config.headers || {};
+                config.headers.Authorization = `Bearer ${token}`;
+            } else {
+                // ensure Authorization removed if no token
+                if (config.headers) delete config.headers.Authorization;
+            }
         }
         return config;
     },
     (error) => Promise.reject(error)
 );
-
 
 export default api;

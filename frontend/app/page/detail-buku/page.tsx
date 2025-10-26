@@ -1,140 +1,349 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import Image from 'next/image'
 import Navbar from '@/app/components/Navbar'
 import Footer from '@/app/components/Footer'
+import api from '../../api/api' // axios instance
+import { useSearchParams } from 'next/navigation'
+import Link from 'next/link'
+import { ShoppingCart, ChevronDown } from 'lucide-react'
+
+interface Book {
+  id: number
+  title: string
+  author: string
+  description?: string
+  price: number
+  stock?: number
+  cover_image?: string | null
+  created_at?: string | null
+  category?: { id: number; name: string } | null
+  reviews?: Review[] // may be present from API
+}
+
+interface Review {
+  id: number
+  rating: number
+  comment?: string | null
+  user?: { name?: string } | null
+  created_at?: string | null
+}
 
 export default function ProductDetail() {
-  const [quantity, setQuantity] = useState(1)
+  const searchParams = useSearchParams()
+  const id = searchParams?.get('id') || ''
 
-  // === contoh data produk ===
-  const product = {
-    id: 1,
-    title: "Buku Filosofi Teras - Henry Manampiring",
-    description:
-      "Buku ini membahas tentang bagaimana menerapkan filosofi Stoikisme untuk mengatasi emosi negatif, kecemasan, dan menghadapi hidup dengan lebih tenang. Cocok untuk kamu yang ingin hidup lebih rasional dan bahagia.",
-    price: 120000,
-    image: "/images/book1.jpg", // ganti sesuai aset kamu
+  const [book, setBook] = useState<Book | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [recommendations, setRecommendations] = useState<Book[]>([])
+  const [quantity, setQuantity] = useState<number>(1)
+  const [addedMsg, setAddedMsg] = useState<string | null>(null)
+
+  // NEW: zoom state + ref for image container
+  const [isZoom, setIsZoom] = useState(false)
+  const [origin, setOrigin] = useState('50% 50%')
+  const imgContainerRef = useRef<HTMLDivElement | null>(null)
+
+  // NEW: reviews UI state
+  const [reviewsOpen, setReviewsOpen] = useState(false)
+  const [reviewsCount, setReviewsCount] = useState(0)
+  const [avgRating, setAvgRating] = useState<number | null>(null)
+
+  const handleAddToCart = () => {
+    if (!book) return
+    try {
+      const existing = JSON.parse(localStorage.getItem('pendingCart') || '[]')
+      existing.push({ book_id: book.id, quantity, price: book.price })
+      localStorage.setItem('pendingCart', JSON.stringify(existing))
+      setAddedMsg('Berhasil ditambahkan ke keranjang sementara')
+      setTimeout(() => setAddedMsg(null), 2000)
+    } catch (e) {
+      console.error('Failed to add to pending cart', e)
+    }
   }
 
-  const recommendations = [
-    {
-      id: 2,
-      title: "Sebuah Seni untuk Bersikap Bodo Amat",
-      price: 95000,
-      image: "/images/book2.jpg",
-    },
-    {
-      id: 3,
-      title: "Atomic Habits",
-      price: 110000,
-      image: "/images/book3.jpg",
-    },
-    {
-      id: 4,
-      title: "Rich Dad Poor Dad",
-      price: 100000,
-      image: "/images/book4.jpg",
-    },
-  ]
+  useEffect(() => {
+    if (!id) {
+      setError('Buku tidak ditemukan')
+      setLoading(false)
+      return
+    }
+
+    let mounted = true
+    setLoading(true)
+
+    // fetch single book
+    api.get(`/books/${id}`)
+      .then(res => {
+        if (!mounted) return
+        setBook(res.data)
+      })
+      .catch(err => {
+        console.error(err)
+        if (mounted) setError('Gagal memuat detail buku')
+      })
+      .finally(() => {
+        if (mounted) setLoading(false)
+      })
+
+    // fetch recommendations (all books) and pick random 3 excluding current
+    api.get('/books')
+      .then(res => {
+        if (!mounted) return
+        const all: Book[] = res.data || []
+        const others = all.filter(b => String(b.id) !== String(id))
+        // shuffle and take 3
+        for (let i = others.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1))
+          ;[others[i], others[j]] = [others[j], others[i]]
+        }
+        setRecommendations(others.slice(0, 3))
+      })
+      .catch(err => {
+        console.error('Failed to load recommendations', err)
+      })
+
+    return () => { mounted = false }
+  }, [id])
+
+  // NEW: mouse handlers
+  function handleMouseMove(e: React.MouseEvent) {
+    const el = imgContainerRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    const xPercent = Math.round((x / rect.width) * 100)
+    const yPercent = Math.round((y / rect.height) * 100)
+    setOrigin(`${xPercent}% ${yPercent}%`)
+  }
+
+  useEffect(() => {
+    // after book loaded, compute reviews stats if available
+    if (book && book.reviews && Array.isArray(book.reviews)) {
+      const revs: Review[] = book.reviews
+      setReviewsCount(revs.length)
+      if (revs.length > 0) {
+        const sum = revs.reduce((s, r) => s + (Number(r.rating) || 0), 0)
+        setAvgRating(Number((sum / revs.length).toFixed(1)))
+      } else {
+        setAvgRating(null)
+      }
+    } else {
+      setReviewsCount(0)
+      setAvgRating(null)
+    }
+  }, [book])
+
+  if (loading) {
+    return (
+      <>
+        <Navbar />
+        <div className="min-h-screen flex items-center justify-center">Memuat...</div>
+        <Footer />
+      </>
+    )
+  }
+
+  if (error || !book) {
+    return (
+      <>
+        <Navbar />
+        <div className="min-h-screen flex items-center justify-center text-red-600">
+          {error || 'Buku tidak ditemukan'}
+        </div>
+        <Footer />
+      </>
+    )
+  }
 
   return (
     <>
-        <Navbar />
-        <div className="min-h-screen bg-white text-gray-900 mt-10">
-        {/* === CONTAINER === */}
+      <Navbar />
+      <div className="min-h-screen bg-white text-gray-900 mt-10">
         <div className="max-w-6xl mx-auto px-6 py-10 grid grid-cols-1 md:grid-cols-2 gap-10">
-            {/* === IMAGE === */}
-            <div className="relative w-full h-[600px] bg-gray-100 rounded-2xl overflow-hidden">
+          {/* IMAGE */}
+          <div
+            ref={imgContainerRef}
+            onMouseMove={handleMouseMove}
+            onMouseEnter={() => setIsZoom(true)}
+            onMouseLeave={() => setIsZoom(false)}
+            className="relative w-full h-[600px] bg-gray-100 rounded-2xl overflow-hidden flex items-center justify-center"
+          >
             <Image
-                src={product.image}
-                alt={product.title}
-                fill
-                className="object-cover"
+              src={book.cover_image ? `http://localhost:8000/storage/${book.cover_image}` : '/images/dummyImage.jpg'}
+              alt={book.title}
+              fill
+              className="object-contain p-6"
+              style={{
+                transform: isZoom ? 'scale(2)' : 'scale(1)',
+                transformOrigin: origin,
+                transition: 'transform 220ms ease-out',
+              }}
             />
-            </div>
+          </div>
 
-            {/* === DETAILS === */}
-            <div className="flex flex-col justify-between">
+          {/* DETAILS */}
+          <div className="flex flex-col justify-start">
             <div>
-                <h1 className="text-3xl font-semibold mb-3">{product.title}</h1>
-                <p className="text-gray-500 mb-6">by Henry Manampiring</p>
+              <h1 className="text-3xl font-semibold mb-2">{book.title}</h1>
+              <p className="text-gray-500 mb-6">by {book.author}</p>
 
-                <p className="text-2xl font-semibold mb-6">
-                {product.price.toLocaleString('id-ID', {
-                    style: 'currency',
-                    currency: 'IDR',
+              <p className="text-2xl font-semibold mb-6">
+                Rp{" "}
+                {Number(book.price).toLocaleString("id-ID", {
+                  minimumFractionDigits: 0,
+                  maximumFractionDigits: 0,
                 })}
-                </p>
+              </p>
 
-                <p className="text-gray-700 leading-relaxed mb-8">
-                {product.description}
-                </p>
+              <div className="text-gray-700 leading-relaxed mb-8 whitespace-pre-line">
+                {book.description || 'Tidak ada deskripsi.'}
+              </div>
 
-                {/* === QTY CONTROL === */}
-                <div className="flex items-center gap-3 mb-8">
+              {/* QUANTITY CONTROL */}
+              <div className="flex items-center gap-3 mb-6">
                 <span className="font-medium">Jumlah:</span>
                 <div className="flex items-center border border-gray-300 rounded-md overflow-hidden">
-                    <button
-                    onClick={() => setQuantity(Math.max(quantity - 1, 1))}
+                  <button
+                    onClick={() => setQuantity(q => Math.max(1, q - 1))}
                     className="px-3 py-1 text-xl font-semibold hover:bg-gray-100"
-                    >
+                  >
                     −
-                    </button>
-                    <span className="px-4 py-1">{quantity}</span>
-                    <button
-                    onClick={() => setQuantity(quantity + 1)}
+                  </button>
+                  <span className="px-4 py-1 min-w-[48px] text-center">{quantity}</span>
+                  <button
+                    onClick={() => setQuantity(q => q + 1)}
                     className="px-3 py-1 text-xl font-semibold hover:bg-gray-100"
-                    >
+                  >
                     +
-                    </button>
+                  </button>
                 </div>
-                </div>
+              </div>
 
-                {/* === BUTTONS === */}
-                <div className="flex flex-col sm:flex-row gap-4">
-                <button className="w-full bg-black text-white py-3 rounded-full font-semibold hover:bg-gray-800 transition">
-                    Tambah ke Keranjang
-                </button>
-                <button className="w-full border border-gray-400 py-3 rounded-full font-semibold hover:bg-gray-100 transition">
-                    Beli Sekarang
-                </button>
-                </div>
+              {/* FEEDBACK */}
+              {addedMsg && <div className="mb-4 text-sm text-green-600">{addedMsg}</div>}
 
-                
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={handleAddToCart}
+                  className="bg-black text-white px-6 py-3 rounded-full font-semibold hover:bg-gray-800 transition"
+                >
+                  Tambah ke Keranjang
+                </button>
+                <button className="border border-gray-400 px-6 py-3 rounded-full font-semibold hover:bg-gray-100 transition">
+                  Beli Sekarang
+                </button>
+              </div>
+
+              {/* === Modern Reviews Section === */}
+              <div className="mt-8">
+                <button
+                  onClick={() => setReviewsOpen(r => !r)}
+                  className="w-full flex items-center justify-between pb-4 border-b border-gray-300 hover:border-gray-400 transition group"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg font-medium text-black">Reviews</span>
+                    <span className="text-sm text-gray-500">({reviewsCount})</span>
+                  </div>
+                  
+                  <div className="flex items-center gap-4">
+                    {avgRating !== null ? (
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center">
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <span 
+                              key={i} 
+                              className={`text-xl ${i < Math.round(avgRating) ? 'text-yellow-500' : 'text-gray-300'}`}
+                            >
+                              ★
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center">
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <span key={i} className="text-xl text-gray-300">★</span>
+                        ))}
+                      </div>
+                    )}
+                    <ChevronDown 
+                      className={`w-5 h-5 text-gray-500 transition-transform duration-300 ${reviewsOpen ? 'rotate-180' : ''}`}
+                    />
+                  </div>
+                </button>
+
+                {reviewsOpen && (
+                  <div className="mt-6 space-y-4">
+                    {book?.reviews && book.reviews.length > 0 ? (
+                      book.reviews.map((r: Review) => (
+                        <div key={r.id} className="pb-4 border-b border-gray-100 last:border-b-0">
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="text-sm font-medium text-gray-900">{r.user?.name || 'Anonymous'}</div>
+                            <div className="flex items-center">
+                              {Array.from({ length: 5 }).map((_, i) => (
+                                <span key={i} className={`text-base ${i < (r.rating || 0) ? 'text-yellow-500' : 'text-gray-200'}`}>★</span>
+                              ))}
+                            </div>
+                          </div>
+                          {r.comment && <div className="text-sm text-gray-600 leading-relaxed">{r.comment}</div>}
+                          {r.created_at && (
+                            <div className="text-xs text-gray-400 mt-2">
+                              {new Date(r.created_at).toLocaleDateString('id-ID', { 
+                                year: 'numeric', 
+                                month: 'long', 
+                                day: 'numeric' 
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-sm text-gray-500 py-4">Belum ada review untuk buku ini.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+
             </div>
-            </div>
+          </div>
         </div>
 
-        {/* === RECOMMENDATIONS === */}
+        {/* RECOMMENDATIONS */}
         <div className="max-w-6xl mx-auto px-6 mt-20 pb-20">
-            <h2 className="text-2xl font-semibold mb-6">Kamu Mungkin Suka</h2>
+          <h2 className="text-2xl font-semibold mb-6">Kamu Mungkin Suka</h2>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-8">
             {recommendations.map((item) => (
-                <div key={item.id} className="flex flex-col cursor-pointer">
-                <div className="relative w-full h-80 bg-gray-100 rounded-xl overflow-hidden group">
-                    <Image
-                    src={item.image}
+              <Link key={item.id} href={`/page/detail-buku?id=${item.id}`} className="flex flex-col cursor-pointer group bg-white rounded-xl shadow-md overflow-hidden hover:shadow-xl transition-shadow">
+                <div className="relative w-full h-56 bg-gray-100">
+                  <Image
+                    src={item.cover_image ? `http://localhost:8000/storage/${item.cover_image}` : '/images/dummyImage.jpg'}
                     alt={item.title}
                     fill
-                    className="object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
+                    className="object-contain p-4"
+                  />
                 </div>
-                <p className="mt-3 text-base font-semibold">{item.title}</p>
-                <p className="text-gray-600 text-sm">
-                    {item.price.toLocaleString('id-ID', {
-                    style: 'currency',
-                    currency: 'IDR',
+                <div className="p-4">
+                  <h3 className="text-base font-semibold line-clamp-2 min-h-[2.4rem] text-black">{item.title}</h3>
+                  <p className="text-gray-600 text-xs line-clamp-1 mt-1">{item.author}</p>
+                  <p className="text-black font-bold mt-3">
+                    Rp{" "}
+                    {Number(item.price).toLocaleString("id-ID", {
+                      minimumFractionDigits: 0,
+                      maximumFractionDigits: 0,
                     })}
-                </p>
+                  </p>
                 </div>
+              </Link>
             ))}
-            </div>
+          </div>
         </div>
-        </div>
-        <Footer />
+      </div>
+      <Footer />
     </>
   )
 }

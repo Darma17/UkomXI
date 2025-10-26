@@ -4,18 +4,44 @@ import Image from "next/image"
 import Link from "next/link"
 import { useEffect, useState, useRef } from "react"
 import { AnimatePresence, motion } from "framer-motion"
-import { ChevronLeft, ChevronRight } from "lucide-react"; // pastikan sudah install lucide-react
+import { ChevronLeft, ChevronRight, ShoppingCart } from "lucide-react"
 import Navbar from "./components/Navbar"
 import Footer from "./components/Footer"
 
+// Interface untuk tipe data
+interface FeaturedProduct {
+  id: number
+  src: string
+  alt: string
+  title: string
+  subtitle: string
+  buttonText: string
+  link: string
+}
+
+interface Category {
+  id: number
+  title: string
+  image: string
+}
+
+interface Book {
+  id: number
+  title: string
+  author: string
+  price: number
+  stock: number
+  cover_image: string | null
+}
+
 export default function HomePage() {
-  const featuredProducts = [
+  const featuredProducts: FeaturedProduct[] = [
     { id: 1, src: "/images/bannerBukuk.jpeg", alt: "BukuKu", title: "BukuKu", subtitle: "Beli Buku dengan Harga Terbaik", buttonText: "Jelajahi Sekarang", link: "/page/explore" },
     { id: 2, src: "/images/bannerAtomicHabits.jpg", alt: "Atomic Habits", title: "Atomic Habits", subtitle: "Ubah Hidup Anda dengan Perubahan Terkecil!", buttonText: "Pelajari Lebih Lanjut", link: "/page/about" },
     { id: 3, src: "/images/bannerPomo.jpeg", alt: "The Psychology of Money", title: "The Psychology of Money", subtitle: "The Psychology of Money: Timeless Lessons on Wealth, Greed, and Happiness", buttonText: "Pelajari Lebih Lanjut", link: "/page/explore" },
   ]
 
-  const categories = [
+  const categories: Category[] = [
     { id: 1, title: "Komik & Novel", image: "/images/komik.avif" },
     { id: 2, title: "Agama", image: "/images/agama.png" },
     { id: 3, title: "Fiksi", image: "/images/fiksi.avif" },
@@ -24,7 +50,9 @@ export default function HomePage() {
   ]
 
   const [currentIndex, setCurrentIndex] = useState(0)
-  const [highlightBooks, setHighlightBooks] = useState<any[]>([])
+  const [highlightBooks, setHighlightBooks] = useState<Book[]>([])
+  const [hoveredBook, setHoveredBook] = useState<number | null>(null)
+  const [cartClicked, setCartClicked] = useState<Record<number, boolean>>({})
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -36,29 +64,38 @@ export default function HomePage() {
   useEffect(() => {
     fetch("http://localhost:8000/api/books/highlight")
       .then((res) => res.json())
-      .then((data) => setHighlightBooks(data))
+      .then((data: Book[]) => setHighlightBooks(data))
       .catch((err) => console.error(err))
   }, [])
 
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [scrollPos, setScrollPos] = useState(0);
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [scrollPos, setScrollPos] = useState(0)
 
-  const scrollAmount = 280; // jarak scroll tiap klik (1 card kira2)
-  const maxScroll =
-    (scrollRef.current?.scrollWidth || 0) - (scrollRef.current?.clientWidth || 0);
+  const scrollAmount = 280
 
   const handleScroll = (dir: "left" | "right") => {
-    if (!scrollRef.current) return;
+    if (!scrollRef.current) return
     const newPos =
-      dir === "left" ? scrollRef.current.scrollLeft - scrollAmount : scrollRef.current.scrollLeft + scrollAmount;
-    scrollRef.current.scrollTo({ left: newPos, behavior: "smooth" });
-    setScrollPos(newPos);
-  };
+      dir === "left" 
+        ? scrollRef.current.scrollLeft - scrollAmount 
+        : scrollRef.current.scrollLeft + scrollAmount
+    scrollRef.current.scrollTo({ left: newPos, behavior: "smooth" })
+    setScrollPos(newPos)
+  }
 
-  const canScrollLeft = scrollPos > 0;
+  const canScrollLeft = scrollPos > 0
   const canScrollRight = scrollRef.current
     ? scrollPos < (scrollRef.current.scrollWidth - scrollRef.current.clientWidth) - 10
-    : true;
+    : true
+
+  const handleCartClick = (e: React.MouseEvent<HTMLButtonElement>, bookId: number) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setCartClicked(prev => ({
+      ...prev,
+      [bookId]: !prev[bookId]
+    }))
+  }
 
   return (
     <>
@@ -137,7 +174,9 @@ export default function HomePage() {
 
         {/* CATEGORY SECTION */}
         <section className="bg-white text-black py-16 px-8 md:px-16">
-          <h2 className="text-3xl font-bold mb-8 text-center after:block after:w-20 after:h-1 after:bg-gradient-to-r after:from-blue-600 after:to-blue-600 after:mx-auto after:mt-2">Kategori Terpopuler</h2>
+          <h2 className="text-3xl font-bold mb-8 text-center after:block after:w-20 after:h-1 after:bg-gradient-to-r after:from-blue-600 after:to-blue-600 after:mx-auto after:mt-2">
+            Kategori Terpopuler
+          </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
             {categories.map((cat) => (
               <div
@@ -164,10 +203,13 @@ export default function HomePage() {
           </div>
         </section>
 
+        {/* BUKU UNGGULAN SECTION */}
         <section className="bg-white text-black py-16 px-8 md:px-16">
           {/* HEADER */}
           <div className="flex justify-between items-center mb-10 relative">
-            <h2 className="text-3xl font-bold text-center w-full after:block after:w-20 after:h-1 after:bg-gradient-to-r after:from-blue-600 after:to-blue-600 after:mx-auto after:mt-2">Buku Unggulan</h2>
+            <h2 className="text-3xl font-bold text-center w-full after:block after:w-20 after:h-1 after:bg-gradient-to-r after:from-blue-600 after:to-blue-600 after:mx-auto after:mt-2">
+              Buku Unggulan
+            </h2>
 
             {/* Tombol panah */}
             <div className="absolute right-0 top-1/2 -translate-y-1/2 flex gap-2">
@@ -201,12 +243,18 @@ export default function HomePage() {
             ref={scrollRef}
             className="flex gap-4 overflow-x-auto scroll-smooth scrollbar-hide pb-4"
             onScroll={(e) => setScrollPos(e.currentTarget.scrollLeft)}
+            style={{
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none'
+            }}
           >
             {highlightBooks.map((book) => (
               <Link
                 key={book.id}
-                href={`/page/detail-buku`}
-                className="flex-none w-48 border rounded-xl overflow-hidden shadow-md hover:shadow-xl transition-shadow duration-300 bg-white"
+                href={`/page/detail-buku?id=${book.id}`}
+                className="flex-none w-48 border rounded-xl overflow-hidden shadow-md hover:shadow-xl transition-shadow duration-300 bg-white relative group"
+                onMouseEnter={() => setHoveredBook(book.id)}
+                onMouseLeave={() => setHoveredBook(null)}
               >
                 <div className="relative w-full h-56 overflow-hidden">
                   <Image
@@ -221,6 +269,25 @@ export default function HomePage() {
                       book.stock === 0 ? "opacity-50" : ""
                     }`}
                   />
+                  
+                  {/* Icon keranjang saat hover (hanya muncul jika stock > 0) */}
+                  {book.stock > 0 && hoveredBook === book.id && (
+                    <button
+                      onClick={(e) => handleCartClick(e, book.id)}
+                      className="absolute top-2 right-2 bg-white p-2 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 z-10"
+                    >
+                      <ShoppingCart 
+                        size={18} 
+                        className={`${
+                          cartClicked[book.id] 
+                            ? 'fill-black text-black' 
+                            : 'text-gray-700'
+                        } transition-all`}
+                      />
+                    </button>
+                  )}
+                  
+                  {/* Label stok habis */}
                   {book.stock === 0 && (
                     <div className="absolute inset-0 flex items-center justify-center">
                       <div className="bg-red-200 text-red-700 font-bold px-4 py-1 text-sm rounded-md shadow-md opacity-90">
@@ -229,9 +296,14 @@ export default function HomePage() {
                     </div>
                   )}
                 </div>
+                
                 <div className="p-3">
-                  <h3 className="text-base font-semibold line-clamp-2 h-15">{book.title}</h3>
-                  <p className="text-gray-600 text-xs">{book.author}</p>
+                  <h3 className="text-base font-semibold line-clamp-2 min-h-[3rem]">
+                    {book.title}
+                  </h3>
+                  <p className="text-gray-600 text-xs line-clamp-1 mt-1">
+                    {book.author}
+                  </p>
                   <p className="text-black font-bold mt-2">
                     Rp{" "}
                     {Number(book.price).toLocaleString("id-ID", {
@@ -260,7 +332,6 @@ export default function HomePage() {
 
         {/* PRODUCT GALLERY SECTION */}
         <section className="bg-white py-16 px-8 md:px-16">
-
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
             {/* PRODUK 1 */}
             <Link
@@ -268,7 +339,7 @@ export default function HomePage() {
               className="relative overflow-hidden rounded-xl group shadow-lg"
             >
               <Image
-                src="/images/badGoodHabits.jpg" // ganti dengan path gambarmu
+                src="/images/badGoodHabits.jpg"
                 alt="Atomic Habits"
                 width={400}
                 height={400}
@@ -282,7 +353,7 @@ export default function HomePage() {
               className="relative overflow-hidden rounded-xl group shadow-lg"
             >
               <Image
-                src="/images/atomicHabits.jpeg" // ganti dengan path gambarmu
+                src="/images/atomicHabits.jpeg"
                 alt="Kalung Elegan"
                 width={400}
                 height={400}
@@ -296,7 +367,7 @@ export default function HomePage() {
               className="relative overflow-hidden rounded-xl group shadow-lg"
             >
               <Image
-                src="/images/sejarahFilsufDunia.jpg" // ganti dengan path gambarmu
+                src="/images/sejarahFilsufDunia.jpg"
                 alt="Sepatu Berkelas"
                 width={400}
                 height={400}
@@ -305,7 +376,6 @@ export default function HomePage() {
             </Link>
           </div>
         </section>
-
 
         {/* ABOUT SECTION */}
         <section className="bg-gray-50 text-black py-16 px-8 md:px-16">
