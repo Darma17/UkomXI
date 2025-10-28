@@ -14,6 +14,12 @@ const nextConfig: NextConfig = {
         pathname: "/storage/**",
       },
       {
+        protocol: "http",
+        hostname: "127.0.0.1", // bisa tambahkan domain lain di sini
+        port: "8000",
+        pathname: "/storage/**",
+      },
+      {
         protocol: "https",
         hostname: "ebooks.gramedia.com",
       },

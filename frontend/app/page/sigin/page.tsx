@@ -4,23 +4,26 @@ import React, { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { GoogleLogin, GoogleOAuthProvider } from "@react-oauth/google"
 import axios from "axios"
+import { Eye, EyeOff } from "lucide-react" // ← ikon dari lucide-react (sudah tersedia di Next.js 14+)
 
 export default function SignIn() {
 	const router = useRouter()
 	const searchParams = useSearchParams()
 	const [email, setEmail] = useState('')
 	const [password, setPassword] = useState('')
+	const [showPassword, setShowPassword] = useState(false)
 	const [loading, setLoading] = useState(false)
 	const [errorMsg, setErrorMsg] = useState('')
 	const [successMsg, setSuccessMsg] = useState('')
 
-	// New: auto-hide notification after 4 seconds
+	// Auto-hide error
 	useEffect(() => {
 		if (!errorMsg) return
 		const id = setTimeout(() => setErrorMsg(''), 2000)
 		return () => clearTimeout(id)
 	}, [errorMsg])
-	// show success message if redirected from reset or register flow
+
+	// Show success after redirect
 	useEffect(() => {
 		if (searchParams?.get('reset') === '1' || searchParams?.get('register') === '1') {
 			setSuccessMsg('Silahkan Login')
@@ -49,7 +52,6 @@ export default function SignIn() {
 				return
 			}
 
-			// success -> redirect to OTP page with email query
 			router.push(`/page/otp?email=${encodeURIComponent(email)}`)
 		} catch (err) {
 			setErrorMsg("Terjadi Kesalahan, coba lagi")
@@ -71,14 +73,14 @@ export default function SignIn() {
 
 			<div className="absolute inset-0 bg-black/70"></div>
 
-			{/* Success green notification */}
+			{/* Success Notification */}
 			{successMsg && (
 				<div className="fixed left-1/2 transform -translate-x-1/2 top-4 z-50">
 					<div className="bg-green-600 text-white px-6 py-2 rounded shadow-md animate-slideDown">{successMsg}</div>
 				</div>
 			)}
 
-			{/* Notification (slide down) */}
+			{/* Error Notification */}
 			{errorMsg && (
 				<div className="fixed left-1/2 transform -translate-x-1/2 top-4 z-50">
 					<div className="bg-red-600 text-white px-6 py-2 rounded shadow-md animate-slideDown">
@@ -89,17 +91,9 @@ export default function SignIn() {
 
 			{/* === FORM CONTAINER === */}
 			<div className="relative z-10 backdrop-blur-xl bg-black/40 border border-white/20 text-white rounded-2xl shadow-2xl p-10 w-full max-w-md flex flex-col items-center space-y-6">
-				{/* === LOGO === */}
-				<img
-					src="/images/logoPutih.png"
-					alt="Logo"
-					className="w-26 h-26 object-contain mb-2"
-				/>
-
-				{/* === TITLE === */}
+				<img src="/images/logoPutih.png" alt="Logo" className="w-26 h-26 object-contain mb-2" />
 				<h2 className="text-4xl font-bold mb-4 tracking-wide">Masuk</h2>
 
-				{/* Form */}
 				<form className="w-full flex flex-col space-y-4" onSubmit={handleSubmit}>
 					<div>
 						<label className="block text-sm font-medium mb-1">Email</label>
@@ -113,16 +107,25 @@ export default function SignIn() {
 						/>
 					</div>
 
-					<div>
+					{/* === PASSWORD INPUT DENGAN ICON MATA === */}
+					<div className="relative">
 						<label className="block text-sm font-medium mb-1">Password</label>
 						<input
-							type="password"
+							type={showPassword ? "text" : "password"}
 							placeholder="Masukkan Password Anda"
 							value={password}
 							onChange={(e) => setPassword(e.target.value)}
 							required
-							className="w-full px-4 py-2 rounded-md bg-white/10 border border-white/30 text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-white/50"
+							className="w-full px-4 py-2 pr-10 rounded-md bg-white/10 border border-white/30 text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-white/50"
 						/>
+						<button
+							type="button"
+							onClick={() => setShowPassword(!showPassword)}
+							className="absolute right-3 top-9 text-gray-300 hover:text-white transition"
+							tabIndex={-1}
+						>
+							{showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+						</button>
 					</div>
 
 					<div className="flex justify-start">
@@ -144,39 +147,30 @@ export default function SignIn() {
 					<GoogleOAuthProvider clientId="764774487773-iikq8ssu0drtdijjha7n0139r8j27cpc.apps.googleusercontent.com">
 						<GoogleLogin
 							onSuccess={async (credentialResponse) => {
-							try {
-								const token = credentialResponse.credential
+								try {
+									const token = credentialResponse.credential
+									const res = await axios.post("http://127.0.0.1:8000/api/google-login", { token })
 
-								const res = await axios.post("http://127.0.0.1:8000/api/google-login", {
-								token,
-								})
-
-								if (res.status === 200) {
-									// Simpan token dari Laravel
-									localStorage.setItem("authToken", res.data.token)
-									// notify other listeners in same tab
-									window.dispatchEvent(new Event("authChanged"))
-									router.push("/") // arahkan ke halaman utama
-								} else {
+									if (res.status === 200) {
+										localStorage.setItem("authToken", res.data.token)
+										window.dispatchEvent(new Event("authChanged"))
+										router.push("/")
+									} else {
+										setErrorMsg("Gagal login dengan Google atau akun Google belum terdaftar")
+									}
+								} catch (err) {
+									console.error(err)
 									setErrorMsg("Gagal login dengan Google atau akun Google belum terdaftar")
 								}
-							} catch (err) {
-								console.error(err)
-								setErrorMsg("Gagal login dengan Google atau akun Google belum terdaftar")
-							}
 							}}
 							onError={() => setErrorMsg("Login Google gagal")}
 						/>
 					</GoogleOAuthProvider>
 				</form>
 
-				{/* === CREATE ACCOUNT LINK === */}
 				<p className="text-sm text-gray-300 mt-2">
 					Belum Punya Akun?{' '}
-					<a
-						href="/page/create-account"
-						className="text-white font-medium hover:underline"
-					>
+					<a href="/page/create-account" className="text-white font-medium hover:underline">
 						Buat Akun
 					</a>
 				</p>

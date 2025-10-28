@@ -1,131 +1,501 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import Image from 'next/image'
-import { Pencil } from 'lucide-react'
+import { Pencil, LogOut, Trash } from 'lucide-react'
 import Navbar from '@/app/components/Navbar'
 import Footer from '@/app/components/Footer'
+import { useRouter } from 'next/navigation'
 
 export default function Profile() {
+  const router = useRouter()
   const [activeTab, setActiveTab] = useState<'riwayat' | 'alamat'>('riwayat')
   const [isEditNameOpen, setIsEditNameOpen] = useState(false)
   const [isEditAddressOpen, setIsEditAddressOpen] = useState(false)
-  const [name, setName] = useState('Damore Velnava')
-  const [tempName, setTempName] = useState(name)
+  const [name, setName] = useState('')
+  const [tempName, setTempName] = useState('')
+  const [email, setEmail] = useState('')
+  const [userId, setUserId] = useState<number | null>(null)
 
+  const [isHovering, setIsHovering] = useState(false)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [selectedImage, setSelectedImage] = useState("/images/profile.png") // fallback
+  // state untuk ganti foto
+  const [pendingFile, setPendingFile] = useState<File | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
 
-  const [isHovering, setIsHovering] = useState(false);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedImage, setSelectedImage] = useState("/profile.jpg");
+  const [savingName, setSavingName] = useState(false)
+  const [savingImage, setSavingImage] = useState(false)
+  const [addrSaving, setAddrSaving] = useState(false)
+  const [addrDeleting, setAddrDeleting] = useState(false)
+  const busy = savingName || savingImage || addrSaving || addrDeleting
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const [uploadError, setUploadError] = useState<string>('')
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] || null
+    setPendingFile(file)
     if (file) {
-      const imageUrl = URL.createObjectURL(file);
-      setSelectedImage(imageUrl);
-      setIsModalOpen(false);
+      const url = URL.createObjectURL(file)
+      setPreviewUrl(url)
+    } else {
+      setPreviewUrl(null)
     }
-  };
+  }
 
-  const [address, setAddress] = useState({
-    street: 'Jl. Mawar No. 123',
-    city: 'Bandung',
-    province: 'Jawa Barat',
-    postalCode: '40123',
-  })
-  const [tempAddress, setTempAddress] = useState(address)
+  // Fetch user data on mount
+  useEffect(() => {
+    async function loadUser() {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null
+      if (!token) return
+      try {
+        const res = await fetch('http://127.0.0.1:8000/api/user', {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        if (!res.ok) return
+        const u = await res.json()
+        setUserId(u?.id ?? null)
+        setName(u?.name ?? '')
+        setTempName(u?.name ?? '')
+        setEmail(u?.email ?? '')
+        // profile_image bisa berisi path relatif (mis: profile/abc.jpg) atau null
+        const imgPath = u?.profile_image
+        if (imgPath) {
+          // jika sudah berisi URL penuh, pakai langsung; jika tidak, prefiks /storage
+          const full = String(imgPath).startsWith('http')
+            ? String(imgPath)
+            : `http://127.0.0.1:8000/storage/${imgPath}`
+          setSelectedImage(full)
+        } else {
+          setSelectedImage('/images/profile.png')
+        }
+      } catch {
+        // ignore
+      }
+    }
+    loadUser()
+  }, [])
+
+  // Simpan nama ke server
+  async function saveName() {
+    if (!userId) return
+    const token = localStorage.getItem('authToken') || ''
+    setSavingName(true)
+    try {
+      const fd = new FormData()
+      fd.append('name', tempName)
+      const res = await fetch(`http://127.0.0.1:8000/api/users/${userId}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd
+      })
+      if (res.ok) {
+        setName(tempName)
+        setIsEditNameOpen(false)
+      }
+    } catch {
+      // ignore
+    } finally {
+      setSavingName(false)
+    }
+  }
+
+  // Upload foto profil setelah user klik OK pada modal
+  async function saveProfileImage() {
+    if (!pendingFile) { setIsModalOpen(false); return }
+    const token = localStorage.getItem('authToken') || ''
+    setSavingImage(true)
+    try {
+      const fd = new FormData()
+      fd.append('profile_image', pendingFile)
+      const res = await fetch(`http://127.0.0.1:8000/api/user/profile-image`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd
+      })
+
+      const data = await res.json().catch(() => ({}))
+      if (res.ok) {
+        const imgPath = data?.profile_image
+        const full = imgPath
+          ? (String(imgPath).startsWith('http') ? String(imgPath) : `http://127.0.0.1:8000/storage/${imgPath}`)
+          : '/images/profile.png'
+        setSelectedImage(full)
+        setUploadError('')
+      } else {
+        setUploadError(data?.message || 'Gagal mengunggah foto profil')
+      }
+    } catch {
+      setUploadError('Gagal mengunggah foto profil (network)')
+    } finally {
+      // tutup modal & bersihkan preview
+      setIsModalOpen(false)
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+      setPreviewUrl(null)
+      setPendingFile(null)
+      setSavingImage(false)
+    }
+  }
+
+  // Fetch semua alamat milik user login
+  async function fetchAddresses() {
+    const token = localStorage.getItem('authToken') || ''
+    if (!token) return
+    setAddrLoading(true)
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/addresses/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setAddresses(Array.isArray(data) ? data : [])
+      }
+    } catch {
+      // ignore
+    } finally {
+      setAddrLoading(false)
+    }
+  }
+
+  // Muat alamat ketika tab "alamat" dipilih pertama kali
+  useEffect(() => {
+    if (activeTab === 'alamat') {
+      fetchAddresses()
+    }
+  }, [activeTab])
+
+  // Tipe dan state alamat
+  interface Address {
+    id: number
+    nama_alamat: string
+    nama_penerima: string
+    no_telp: string
+    alamat_lengkap: string
+    provinsi: string
+    kabupaten: string
+    kecamatan: string
+  }
+  const emptyAddr = {
+    nama_alamat: '',
+    nama_penerima: '',
+    no_telp: '',
+    alamat_lengkap: '',
+    provinsi: '',
+    kabupaten: '',
+    kecamatan: '',
+  }
+  const [addresses, setAddresses] = useState<Address[]>([])
+  const [addrLoading, setAddrLoading] = useState(false)
+  const [editingAddressId, setEditingAddressId] = useState<number | null>(null)
+  const [addrForm, setAddrForm] = useState<typeof emptyAddr>(emptyAddr)
+
+  // State modal hapus alamat
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<Address | null>(null)
+
+  // Wilayah Indonesia (EMSIFA)
+  type Option = { id: string; name: string }
+  const [provinces, setProvinces] = useState<Option[]>([])
+  const [regencies, setRegencies] = useState<Option[]>([])
+  const [districts, setDistricts] = useState<Option[]>([])
+  const [loadingProv, setLoadingProv] = useState(false)
+  const [loadingKab, setLoadingKab] = useState(false)
+  const [loadingKec, setLoadingKec] = useState(false)
+  const [selectedProvId, setSelectedProvId] = useState<string>('')
+  const [selectedKabId, setSelectedKabId] = useState<string>('')
+  const [selectedKecId, setSelectedKecId] = useState<string>('')
+  // Prefill nama wilayah pada mode edit (cocokkan by name saat list loaded)
+  const [prefillProvName, setPrefillProvName] = useState<string | null>(null)
+  const [prefillKabName, setPrefillKabName] = useState<string | null>(null)
+  const [prefillKecName, setPrefillKecName] = useState<string | null>(null)
+  const WIL_BASE = 'https://www.emsifa.com/api-wilayah-indonesia/api'
+
+  async function loadProvinces() {
+    if (provinces.length > 0) return
+    setLoadingProv(true)
+    try {
+      const res = await fetch(`${WIL_BASE}/provinces.json`)
+      const data = await res.json()
+      setProvinces((data || []).map((x: any) => ({ id: String(x.id), name: String(x.name) })))
+    } catch {
+      setProvinces([])
+    } finally {
+      setLoadingProv(false)
+    }
+  }
+  async function loadRegencies(provId: string) {
+    if (!provId) { setRegencies([]); return }
+    setLoadingKab(true)
+    try {
+      const res = await fetch(`${WIL_BASE}/regencies/${provId}.json`)
+      const data = await res.json()
+      setRegencies((data || []).map((x: any) => ({ id: String(x.id), name: String(x.name) })))
+    } catch {
+      setRegencies([])
+    } finally {
+      setLoadingKab(false)
+    }
+  }
+  async function loadDistricts(kabId: string) {
+    if (!kabId) { setDistricts([]); return }
+    setLoadingKec(true)
+    try {
+      const res = await fetch(`${WIL_BASE}/districts/${kabId}.json`)
+      const data = await res.json()
+      setDistricts((data || []).map((x: any) => ({ id: String(x.id), name: String(x.name) })))
+    } catch {
+      setDistricts([])
+    } finally {
+      setLoadingKec(false)
+    }
+  }
+
+  // Buka modal tambah alamat
+  function openAddAddress() {
+    setEditingAddressId(null)
+    setAddrForm(emptyAddr)
+    // reset dropdown & load provinsi
+    setSelectedProvId(''); setSelectedKabId(''); setSelectedKecId('')
+    setRegencies([]); setDistricts([])
+    setPrefillProvName(null); setPrefillKabName(null); setPrefillKecName(null)
+    loadProvinces()
+    setIsEditAddressOpen(true)
+  }
+
+  // Buka modal edit alamat
+  function openEditAddress(a: Address) {
+    setEditingAddressId(a.id)
+    setAddrForm({
+      nama_alamat: a.nama_alamat || '',
+      nama_penerima: a.nama_penerima || '',
+      no_telp: a.no_telp || '',
+      alamat_lengkap: a.alamat_lengkap || '',
+      provinsi: a.provinsi || '',
+      kabupaten: a.kabupaten || '',
+      kecamatan: a.kecamatan || '',
+    })
+    // reset & prefill by name
+    setSelectedProvId(''); setSelectedKabId(''); setSelectedKecId('')
+    setRegencies([]); setDistricts([])
+    setPrefillProvName(a.provinsi || null)
+    setPrefillKabName(a.kabupaten || null)
+    setPrefillKecName(a.kecamatan || null)
+    loadProvinces()
+    setIsEditAddressOpen(true)
+  }
+
+  // Buka modal hapus alamat
+  function openDeleteAddress(a: Address) {
+    setDeleteTarget(a)
+    setIsDeleteModalOpen(true)
+  }
+
+  // Tutup modal hapus
+  function closeDeleteModal() {
+    setIsDeleteModalOpen(false)
+    setDeleteTarget(null)
+  }
+
+  // Submit tambah/edit alamat
+  async function submitAddressForm(e?: React.FormEvent) {
+    if (e) e.preventDefault()
+    const token = localStorage.getItem('authToken') || ''
+    if (!token) return
+    setAddrSaving(true)
+    try {
+      const method = editingAddressId ? 'PUT' : 'POST'
+      const url = editingAddressId
+        ? `http://127.0.0.1:8000/api/addresses/${editingAddressId}`
+        : 'http://127.0.0.1:8000/api/addresses'
+      const res = await fetch(url, {
+        method,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(addrForm),
+      })
+      if (res.ok) {
+        await fetchAddresses()
+        setIsEditAddressOpen(false)
+        setEditingAddressId(null)
+        setAddrForm(emptyAddr)
+      }
+    } catch {
+      // ignore
+    } finally {
+      setAddrSaving(false)
+    }
+  }
+
+  // Konfirmasi hapus alamat (modal)
+  async function confirmDeleteAddress() {
+    if (!deleteTarget) return
+    const token = localStorage.getItem('authToken') || ''
+    if (!token) return
+    setAddrDeleting(true)
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/api/addresses/${deleteTarget.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.ok) {
+        setAddresses(prev => prev.filter(a => a.id !== deleteTarget.id))
+        closeDeleteModal()
+      }
+    } catch {
+      // ignore
+    } finally {
+      setAddrDeleting(false)
+    }
+  }
+
+  // Logout dari halaman profil
+  async function handleLogout() {
+    const token = localStorage.getItem('authToken')
+    try {
+      if (token) {
+        await fetch('http://127.0.0.1:8000/api/logout', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      }
+    } catch {
+      // ignore error
+    } finally {
+      localStorage.removeItem('authToken')
+      window.dispatchEvent(new Event('authChanged'))
+      router.push('/')
+    }
+  }
 
   const orderHistory = [
     {
       id: 1,
       date: '12 September 2025',
       items: [
-        { id: 1, name: 'Buku React Modern', price: 85000, qty: 1, image: '/books/react.jpg' },
-        { id: 2, name: 'Buku Tailwind CSS', price: 65000, qty: 2, image: '/books/tailwind.jpg' },
-      ],
+        { id: 1, name: 'Buku React Modern', price: 85000, qty: 1, image: '/images/dummyImage.jpg' },
+        { id: 2, name: 'Buku Tailwind CSS', price: 65000, qty: 2, image: '/images/dummyImage.jpg' },
+      ]
     },
     {
       id: 2,
-      date: '3 Oktober 2025',
+      date: '10 September 2025',
       items: [
-        { id: 1, name: 'Buku Next.js Lanjutan', price: 95000, qty: 1, image: '/books/nextjs.jpg' },
-      ],
-    },
-    {
-      id: 3,
-      date: '17 Oktober 2025',
-      items: [
-        { id: 1, name: 'Buku Next.js Lanjutan', price: 95000, qty: 1, image: '/books/nextjs.jpg' },
-      ],
+        { id: 3, name: 'Buku Next.js', price: 75000, qty: 1, image: '/images/dummyImage.jpg' },
+        { id: 4, name: 'Buku JavaScript Dasar', price: 55000, qty: 3, image: '/images/dummyImage.jpg' },
+      ]
     },
   ]
+  // Alias untuk menangani salah ketik "orderhHistory"
+  const orderhHistory = orderHistory
 
   return (
     <>
-        <Navbar />
-        <div className="min-h-screen bg-gray-50 flex flex-col items-center py-20 px-4">
-            <div className="flex flex-col items-center">
-                {/* Foto profil dengan hover effect */}
-                <div
-                    className="relative w-32 h-32 rounded-full overflow-hidden border-4 border-gray-300 mb-4 group cursor-pointer"
-                    onMouseEnter={() => setIsHovering(true)}
-                    onMouseLeave={() => setIsHovering(false)}
-                    onClick={() => setIsModalOpen(true)}
-                >
-                    <Image src={selectedImage} alt="Profile" fill className="object-cover" />
+      <Navbar />
+      {uploadError && (
+        <div className="fixed left-1/2 transform -translate-x-1/2 top-4 z-50">
+          <div className="bg-red-600 text-white text-sm font-semibold py-3 px-4 rounded-lg shadow-md">
+            {uploadError}
+          </div>
+        </div>
+      )}
+      {/* Global busy overlay: blokir klik + cursor not-allowed */}
+      {busy && (
+        <div className="fixed inset-0 z-[100] bg-transparent cursor-not-allowed" style={{ pointerEvents: 'auto' }} />
+      )}
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center py-20 px-4">
+        {/* Container relatif untuk tombol logout di kanan-atas */}
+        <div className="w-full max-w-2xl relative">
+          <button
+            onClick={handleLogout}
+            className={`absolute right-0 top-1 flex items-center gap-1 text-red-600 text-sm hover:underline ${busy ? 'cursor-not-allowed opacity-70' : ''}`}
+            disabled={busy}
+          >
+            <LogOut size={16} /> Keluar
+          </button>
 
-                    {/* Overlay saat hover */}
-                    {isHovering && (
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                        <Pencil className="text-white w-8 h-8" />
+          <div className="flex flex-col items-center">
+            {/* Foto profil dengan hover effect */}
+            <div
+              className={`relative w-32 h-32 rounded-full overflow-hidden border-4 border-gray-300 mb-4 group ${busy ? 'cursor-not-allowed pointer-events-none' : 'cursor-pointer'}`}
+              onMouseEnter={() => setIsHovering(true)}
+              onMouseLeave={() => setIsHovering(false)}
+              onClick={() => setIsModalOpen(true)}
+            >
+              <Image src={selectedImage} alt="Profile" fill className="object-cover" />
+
+              {/* Overlay saat hover */}
+              {isHovering && (
+              <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                  <Pencil className="text-white w-8 h-8" />
+              </div>
+              )}
+            </div>
+
+            {/* Modal upload foto */}
+            {isModalOpen && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-lg p-6 shadow-lg w-80 text-center">
+                    <h2 className="text-lg font-semibold mb-4 text-black">Ganti Foto Profil</h2>
+
+                    {/* Preview bulat */}
+                    <div className="w-28 h-28 rounded-full overflow-hidden mx-auto mb-4 border">
+                      <img
+                        src={previewUrl || selectedImage}
+                        alt="preview"
+                        className="w-full h-full object-cover"
+                      />
                     </div>
-                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileChange}
+                      className={`block w-full text-sm text-gray-600 mb-4 ${busy ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                      disabled={busy}
+                    />
+
+                    <div className="flex justify-center gap-3">
+                      <button
+                        onClick={() => {
+                          // batalkan perubahan
+                          if (previewUrl) URL.revokeObjectURL(previewUrl)
+                          setPreviewUrl(null)
+                          setPendingFile(null)
+                          setIsModalOpen(false)
+                        }}
+                        className={`px-4 py-2 text-gray-600 bg-gray-300 rounded-md hover:bg-gray-400 transition ${busy ? 'cursor-not-allowed opacity-70' : ''}`}
+                        disabled={busy}
+                      >
+                        Batal
+                      </button>
+                      <button
+                        onClick={saveProfileImage}
+                        className={`px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition ${(!pendingFile || busy) ? 'cursor-not-allowed opacity-70' : ''}`}
+                        disabled={!pendingFile || busy}
+                      >
+                        Simpan
+                      </button>
+                    </div>
                 </div>
-
-                {/* Modal upload foto */}
-                {isModalOpen && (
-                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg p-6 shadow-lg w-80 text-center">
-                        <h2 className="text-lg font-semibold mb-4 text-black">Ganti Foto Profil</h2>
-
-                        <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleFileChange}
-                        className="block w-full text-sm text-gray-600 mb-4 cursor-pointer"
-                        />
-
-                        <div className="flex justify-center gap-3">
-                        <button
-                            onClick={() => setIsModalOpen(false)}
-                            className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400 transition"
-                        >
-                            Batal
-                        </button>
-                        <button
-                            onClick={() => setIsModalOpen(false)}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition"
-                        >
-                            Simpan
-                        </button>
-                        </div>
-                    </div>
-                    </div>
-                )}
                 </div>
+            )}
+            </div>
+        </div>
 
-        {/* Email */}
-        <p className="text-black text-sm mb-1">damore@example.com</p>
+        {/* Email dari DB */}
+        <p className="text-black text-sm mb-1">{email || ''}</p>
 
         {/* Nama + Edit */}
         <div className="flex items-center space-x-2 mb-6">
-            <h2 className="text-xl text-black font-semibold">{name}</h2>
-            <button
-            onClick={() => setIsEditNameOpen(true)}
-            className="p-1 hover:bg-gray-200 rounded-full transition"
-            >
-            <Pencil size={18} className="text-gray-700" />
-            </button>
+          <h2 className="text-xl text-black font-semibold">{name}</h2>
+          <button
+           onClick={() => setIsEditNameOpen(true)}
+           className={`p-1 hover:bg-gray-200 rounded-full transition ${busy ? 'cursor-not-allowed opacity-70' : ''}`}
+           disabled={busy}
+           >
+           <Pencil size={18} className="text-gray-700" />
+           </button>
         </div>
 
         {/* Navigasi Tabs */}
@@ -138,7 +508,7 @@ export default function Profile() {
             }`}
             onClick={() => setActiveTab('riwayat')}
             >
-            Riwayat Belanja
+            Riwayat Pesanan
             </button>
             <button
             className={`pb-2 font-medium ${
@@ -196,24 +566,62 @@ export default function Profile() {
             </div>
             ) : (
             <div className="bg-white p-6 rounded-xl shadow-md border relative">
-                {/* Header alamat + tombol edit */}
-                <div className="flex justify-between items-center mb-4">
+              {/* Header alamat + tombol tambah */}
+              <div className="flex justify-between items-center mb-4">
                 <h3 className="font-semibold text-lg text-black">Alamat Pengguna</h3>
                 <button
-                    onClick={() => {
-                    setTempAddress(address)
-                    setIsEditAddressOpen(true)
-                    }}
-                    className="p-2 hover:bg-gray-200 rounded-full transition"
+                  onClick={openAddAddress}
+                  className="px-3 py-1.5 text-sm bg-black text-white rounded-md hover:bg-gray-800 transition"
+                  disabled={busy}
                 >
-                    <Pencil size={18} className="text-gray-700" />
+                  Tambah Alamat
                 </button>
+              </div>
+
+              {/* List alamat (scrollable) */}
+              {addrLoading ? (
+                <div className="text-sm text-gray-500">Memuat alamat...</div>
+              ) : addresses.length === 0 ? (
+                <div className="text-sm text-gray-500">Belum ada alamat.</div>
+              ) : (
+                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2" style={{ scrollbarWidth: 'thin' }}>
+                  {addresses.map((a) => (
+                    <div key={a.id} className="border rounded-lg p-4">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="font-semibold text-black">{a.nama_alamat}</div>
+                          <div className="text-sm text-gray-700 mt-1">
+                            <div>Nama Penerima: <span className="text-black">{a.nama_penerima}</span></div>
+                            <div>No. Telp: <span className="text-black">{a.no_telp}</span></div>
+                            <div>Provinsi: <span className="text-black">{a.provinsi}</span></div>
+                            <div>Kabupaten: <span className="text-black">{a.kabupaten}</span></div>
+                            <div>Kecamatan: <span className="text-black">{a.kecamatan}</span></div>
+                            <div>Alamat Lengkap: <span className="text-black">{a.alamat_lengkap}</span></div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => openEditAddress(a)}
+                            className="p-2 hover:bg-gray-100 rounded-full"
+                            title="Edit"
+                            disabled={busy}
+                          >
+                            <Pencil size={18} className="text-gray-700" />
+                          </button>
+                          <button
+                            onClick={() => openDeleteAddress(a)}
+                            className="p-2 hover:bg-red-50 rounded-full"
+                            title="Hapus"
+                            disabled={busy}
+                          >
+                            <Trash size={18} className="text-red-600" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <p className='text-black'>{address.street}</p>
-                <p className='text-black'>
-                {address.city}, {address.province}
-                </p>
-                <p className='text-black'>Kode Pos: {address.postalCode}</p>
+              )}
             </div>
             )}
         </div>
@@ -228,20 +636,20 @@ export default function Profile() {
                 value={tempName}
                 onChange={(e) => setTempName(e.target.value)}
                 className="w-full border rounded-md px-3 py-2 mb-4 focus:outline-none focus:ring-2 text-black focus:ring-black"
+                disabled={busy}
                 />
                 <div className="flex justify-end space-x-3">
                 <button
                     onClick={() => setIsEditNameOpen(false)}
-                    className="text-gray-500 hover:text-black"
+                    className={`text-gray-500 hover:text-black ${busy ? 'cursor-not-allowed opacity-70' : ''}`}
+                    disabled={busy}
                 >
                     Batal
                 </button>
                 <button
-                    onClick={() => {
-                    setName(tempName)
-                    setIsEditNameOpen(false)
-                    }}
-                    className="bg-blue-600 text-white px-4 py-1 rounded-md hover:bg-blue-700"
+                    onClick={saveName}
+                    className={`bg-blue-600 text-white px-4 py-1 rounded-md hover:bg-blue-700 ${busy ? 'cursor-not-allowed opacity-70' : ''}`}
+                    disabled={busy}
                 >
                     Simpan
                 </button>
@@ -250,65 +658,170 @@ export default function Profile() {
             </div>
         )}
 
-        {/* Modal Edit Alamat */}
+        {/* Modal Edit Alamat (reuse untuk tambah & edit) */}
         {isEditAddressOpen && (
-            <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
             <div className="bg-white p-6 rounded-xl w-96 shadow-lg">
-                <h3 className="text-lg font-semibold mb-3 text-black">Ubah Alamat</h3>
-
-                <div className="space-y-3 mb-4">
+              <h3 className="text-lg font-semibold mb-4 text-black">
+                {editingAddressId ? 'Ubah Alamat' : 'Tambah Alamat'}
+              </h3>
+              <form onSubmit={submitAddressForm} className="space-y-3 mb-2">
                 <input
-                    type="text"
-                    placeholder="Jalan"
-                    value={tempAddress.street}
-                    onChange={(e) => setTempAddress({ ...tempAddress, street: e.target.value })}
-                    className="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 text-black focus:ring-black"
+                  type="text"
+                  placeholder="Nama Alamat (contoh: Rumah, Kantor)"
+                  value={addrForm.nama_alamat}
+                  onChange={(e) => setAddrForm({ ...addrForm, nama_alamat: e.target.value })}
+                  className="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 text-black focus:ring-black"
+                  required
                 />
                 <input
-                    type="text"
-                    placeholder="Kota"
-                    value={tempAddress.city}
-                    onChange={(e) => setTempAddress({ ...tempAddress, city: e.target.value })}
-                    className="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 text-black focus:ring-black"
+                  type="text"
+                  placeholder="Nama Penerima"
+                  value={addrForm.nama_penerima}
+                  onChange={(e) => setAddrForm({ ...addrForm, nama_penerima: e.target.value })}
+                  className="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 text-black focus:ring-black"
+                  required
                 />
                 <input
-                    type="text"
-                    placeholder="Provinsi"
-                    value={tempAddress.province}
-                    onChange={(e) => setTempAddress({ ...tempAddress, province: e.target.value })}
-                    className="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 text-black focus:ring-black"
+                  type="text"
+                  placeholder="No. Telp"
+                  value={addrForm.no_telp}
+                  onChange={(e) => setAddrForm({ ...addrForm, no_telp: e.target.value })}
+                  className="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 text-black focus:ring-black"
+                  required
                 />
-                <input
-                    type="text"
-                    placeholder="Kode Pos"
-                    value={tempAddress.postalCode}
-                    onChange={(e) => setTempAddress({ ...tempAddress, postalCode: e.target.value })}
-                    className="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 text-black focus:ring-black"
-                />
-                </div>
-
-                <div className="flex justify-end space-x-3">
-                <button
-                    onClick={() => setIsEditAddressOpen(false)}
-                    className="text-gray-500 hover:text-black"
-                >
-                    Batal
-                </button>
-                <button
-                    onClick={() => {
-                    setAddress(tempAddress)
-                    setIsEditAddressOpen(false)
+                {/* Dropdown Provinsi */}
+                <div>
+                  <select
+                    value={selectedProvId}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setSelectedProvId(val)
+                      const opt = provinces.find(p => p.id === val)
+                      setAddrForm(prev => ({ ...prev, provinsi: opt?.name || '', kabupaten: '', kecamatan: '' }))
+                      setSelectedKabId(''); setSelectedKecId('')
+                      setRegencies([]); setDistricts([])
+                      if (val) loadRegencies(val)
                     }}
-                    className="bg-blue-600 text-white px-4 py-1 rounded-md hover:bg-blue-700"
-                >
-                    Simpan
-                </button>
+                    className="w-full border rounded-md px-3 py-2 text-black focus:outline-none focus:ring-2 focus:ring-black disabled:opacity-60"
+                    onFocus={() => loadProvinces()}
+                    required
+                  >
+                    <option value="">{loadingProv ? 'Memuat...' : 'Pilih Provinsi'}</option>
+                    {provinces.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
                 </div>
+                {/* Dropdown Kabupaten/Kota */}
+                <div>
+                  <select
+                    value={selectedKabId}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setSelectedKabId(val)
+                      const opt = regencies.find(k => k.id === val)
+                      setAddrForm(prev => ({ ...prev, kabupaten: opt?.name || '', kecamatan: '' }))
+                      setSelectedKecId('')
+                      setDistricts([])
+                      if (val) loadDistricts(val)
+                    }}
+                    disabled={!selectedProvId}
+                    className="w-full border rounded-md px-3 py-2 text-black focus:outline-none focus:ring-2 focus:ring-black disabled:opacity-60"
+                    required
+                  >
+                    <option value="">{!selectedProvId ? 'Pilih Provinsi dulu' : (loadingKab ? 'Memuat...' : 'Pilih Kabupaten/Kota')}</option>
+                    {regencies.map(k => <option key={k.id} value={k.id}>{k.name}</option>)}
+                  </select>
+                </div>
+                {/* Dropdown Kecamatan */}
+                <div>
+                  <select
+                    value={selectedKecId}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setSelectedKecId(val)
+                      const opt = districts.find(k => k.id === val)
+                      setAddrForm(prev => ({ ...prev, kecamatan: opt?.name || '' }))
+                    }}
+                    disabled={!selectedKabId}
+                    className="w-full border rounded-md px-3 py-2 text-black focus:outline-none focus:ring-2 focus:ring-black disabled:opacity-60"
+                    required
+                  >
+                    <option value="">{!selectedKabId ? 'Pilih Kabupaten dulu' : (loadingKec ? 'Memuat...' : 'Pilih Kecamatan')}</option>
+                    {districts.map(k => <option key={k.id} value={k.id}>{k.name}</option>)}
+                  </select>
+                </div>
+                <textarea
+                  placeholder="Alamat Lengkap"
+                  value={addrForm.alamat_lengkap}
+                  onChange={(e) => setAddrForm({ ...addrForm, alamat_lengkap: e.target.value })}
+                  className="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 text-black focus:ring-black min-h-[80px]"
+                  required
+                />
+              </form>
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={() => {
+                    setIsEditAddressOpen(false)
+                    setEditingAddressId(null)
+                    setAddrForm(emptyAddr)
+                   // reset dropdown saat tutup
+                   setSelectedProvId(''); setSelectedKabId(''); setSelectedKecId('')
+                   setRegencies([]); setDistricts([])
+                  }}
+                  className="text-gray-500 hover:text-black"
+                  disabled={addrSaving}
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={(e) => submitAddressForm(e as any)}
+                  className="bg-blue-600 text-white px-4 py-1 rounded-md hover:bg-blue-700 disabled:opacity-70"
+                  disabled={addrSaving}
+                >
+                  {addrSaving ? 'Menyimpan...' : 'Simpan'}
+                </button>
+              </div>
             </div>
+          </div>
+         )}
+
+        {/* Modal Konfirmasi Hapus Alamat */}
+        {isDeleteModalOpen && deleteTarget && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl w-[420px] max-w-[90%] shadow-xl p-6">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                  <Trash className="text-red-600" size={18} />
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-lg font-semibold text-black">Hapus Alamat?</h4>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Anda yakin ingin menghapus alamat <span className="font-medium text-black">"{deleteTarget.nama_alamat}"</span>?
+                    Tindakan ini tidak dapat dibatalkan.
+                  </p>
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  onClick={closeDeleteModal}
+                  className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100"
+                  disabled={addrDeleting}
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={confirmDeleteAddress}
+                  className="px-4 py-2 rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-70"
+                  disabled={addrDeleting}
+                >
+                  {addrDeleting ? 'Menghapus...' : 'Hapus'}
+                </button>
+              </div>
             </div>
+          </div>
         )}
-        </div>
-        <Footer />
+      </div>
+      <Footer />
     </>
   )
 }

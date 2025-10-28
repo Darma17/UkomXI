@@ -14,12 +14,14 @@ return new class extends Migration
         Schema::create('addresses', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
-            $table->string('receiver_name');
-            $table->string('phone', 20);
-            $table->string('address_line');
-            $table->string('city');
-            $table->string('province');
-            $table->string('postal_code', 10);
+            $table->string('nama_alamat');        // contoh: "Rumah", "Kantor"
+            $table->string('nama_penerima');      // nama penerima paket
+            $table->string('no_telp', 20);        // nomor telepon
+            $table->text('alamat_lengkap');       // alamat lengkap
+            $table->string('provinsi');
+            $table->string('kabupaten');
+            $table->string('kecamatan');
+
             $table->timestamps();
         });
     }

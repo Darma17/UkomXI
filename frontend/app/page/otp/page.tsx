@@ -59,7 +59,16 @@ export default function OtpPage() {
 					setLoading(false)
 					return
 				}
-				// registration completed -> redirect to signin with flag
+
+				// If backend returned token -> auto-login client
+				if (data.token) {
+					localStorage.setItem('authToken', data.token)
+					window.dispatchEvent(new Event('authChanged'))
+					router.push('/')
+					return
+				}
+
+				// fallback: redirect to signin
 				router.push('/page/sigin?register=1')
 			} else {
 				// existing login verify flow

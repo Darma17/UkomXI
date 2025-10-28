@@ -22,6 +22,22 @@ export default function Cart() {
   const [checkoutProcessing, setCheckoutProcessing] = useState(false)
   const [checkoutError, setCheckoutError] = useState<string | null>(null)
 
+  // NEW: alamat tujuan (data dari /api/addresses/me)
+  type Address = {
+    id: number
+    nama_alamat: string
+    nama_penerima: string
+    no_telp: string
+    alamat_lengkap: string
+    provinsi: string
+    kabupaten: string
+    kecamatan: string
+  }
+  const [addressModalOpen, setAddressModalOpen] = useState(false)
+  const [addresses, setAddresses] = useState<Address[]>([])
+  const [addrLoading, setAddrLoading] = useState(false)
+  const [selectedAddress, setSelectedAddress] = useState<Address | null>(null)
+
   // sample fallback (used if not authenticated)
   const sampleFallback = [
     {
@@ -250,6 +266,11 @@ export default function Cart() {
    async function handleCheckout() {
      // no-op if cart empty
      if (!cartItems || cartItems.length === 0) return
+     // validasi alamat tujuan
+     if (!selectedAddress) {
+       setCheckoutError('Pilih alamat tujuan terlebih dahulu.')
+       return
+     }
      // prevent double submit
      if (checkoutProcessing) return
 
@@ -265,7 +286,8 @@ export default function Cart() {
            price: it.price,
            quantity: it.quantity,
          })),
-         total: displayedTotal
+         total: displayedTotal,
+         shipping_address: selectedAddress, // opsional: kirim ke backend
        }
        const res = await api.post('/checkout/midtrans', payload)
        const data = res.data || {}
@@ -416,6 +438,25 @@ export default function Cart() {
     return parts.slice(0, 2).join(" ") + "..."
   }
 
+  async function openAddressSelector() {
+    setCheckoutError(null)
+    setAddressModalOpen(true)
+    setAddrLoading(true)
+    try {
+      const res = await api.get('/addresses/me')
+      setAddresses(Array.isArray(res.data) ? res.data : [])
+    } catch {
+      setAddresses([])
+    } finally {
+      setAddrLoading(false)
+    }
+  }
+
+  function chooseAddress(a: Address) {
+    setSelectedAddress(a)
+    setAddressModalOpen(false)
+  }
+
   return (
     <>
       <Navbar />
@@ -485,43 +526,118 @@ export default function Cart() {
             )}
           </div>
 
-          {/* === RIGHT: ORDER SUMMARY === */}
-          <div className="bg-white rounded-xl shadow-sm p-6 h-fit">
-            <h2 className="text-xl font-bold mb-4">Ringkasan Pesanan</h2>
-
-            <div className="space-y-3 mb-4">
-              {cartItems.map((it) => (
-                <div key={it.cart_item_id ?? it.id} className="flex justify-between text-sm text-gray-700">
-                  <span>{shortTitle(it.title)} x {it.quantity}</span>
-                  <span>Rp {(Number(it.price) * Number(it.quantity)).toLocaleString('id-ID')}</span>
+          {/* === RIGHT: ADDRESS + ORDER SUMMARY === */}
+          <div className="flex flex-col">
+            {/* Alamat Tujuan */}
+            <div className="bg-white rounded-xl shadow-sm p-6 h-fit mb-6">
+              <h2 className="text-xl font-bold mb-4">Alamat Tujuan</h2>
+              {selectedAddress ? (
+                <div className="border border-gray-200 rounded-lg p-4">
+                  <div className="flex justify-between items-start">
+                    <div className="text-sm text-gray-800 space-y-1">
+                      <div className="font-semibold text-black">{selectedAddress.nama_alamat}</div>
+                      <div>{selectedAddress.nama_penerima} ({selectedAddress.no_telp})</div>
+                      <div>{selectedAddress.provinsi}, {selectedAddress.kabupaten}, {selectedAddress.kecamatan}</div>
+                      <div>{selectedAddress.alamat_lengkap}</div>
+                    </div>
+                    <button
+                      onClick={openAddressSelector}
+                      className="text-sm text-blue-600 hover:underline"
+                    >
+                      Ganti
+                    </button>
+                  </div>
                 </div>
-              ))}
-            </div>
-
-            <div className="border-t border-gray-200 pt-4 flex justify-between font-semibold">
-              <span>Total</span>
-              <span>Rp {Number(displayedTotal || 0).toLocaleString('id-ID')}</span>
-            </div>
-
-            <div>
-              {checkoutError && (
-                <div className="text-sm text-red-600 mb-3">{checkoutError}</div>
+              ) : (
+                <button
+                  onClick={openAddressSelector}
+                  className="w-full border-2 border-dashed border-gray-300 rounded-lg p-4 text-gray-600 hover:border-gray-400 hover:text-gray-800 text-sm"
+                >
+                  Pilih alamat tujuan
+                </button>
               )}
-              <button
-                onClick={handleCheckout}
-                disabled={!cartItems.length || checkoutProcessing}
-                className={`w-full mt-6 py-3 rounded-md font-semibold transition ${
-                  !cartItems.length || checkoutProcessing
-                    ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
-                    : 'bg-black text-white hover:bg-gray-900'
-                }`}
-              >
-                {checkoutProcessing ? 'Memproses...' : 'Lanjut ke Pembayaran'}
-              </button>
+              {!selectedAddress && checkoutError && (
+                <div className="text-sm text-red-600 mt-2">{checkoutError}</div>
+              )}
+            </div>
+
+            {/* Ringkasan Pesanan */}
+            <div className="bg-white rounded-xl shadow-sm p-6 h-fit">
+              <h2 className="text-xl font-bold mb-4">Ringkasan Pesanan</h2>
+              <div className="space-y-3 mb-4">
+                {cartItems.map((it) => (
+                  <div key={it.cart_item_id ?? it.id} className="flex justify-between text-sm text-gray-700">
+                    <span>{shortTitle(it.title)} x {it.quantity}</span>
+                    <span>Rp {(Number(it.price) * Number(it.quantity)).toLocaleString('id-ID')}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="border-t border-gray-200 pt-4 flex justify-between font-semibold">
+                <span>Total</span>
+                <span>Rp {Number(displayedTotal || 0).toLocaleString('id-ID')}</span>
+              </div>
+              <div>
+                {checkoutError && (
+                  <div className="text-sm text-red-600 mt-3">{checkoutError}</div>
+                )}
+                <button
+                  onClick={handleCheckout}
+                  disabled={!cartItems.length || checkoutProcessing || !selectedAddress}
+                  className={`w-full mt-6 py-3 rounded-md font-semibold transition ${
+                    !cartItems.length || checkoutProcessing || !selectedAddress
+                      ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
+                      : 'bg-black text-white hover:bg-gray-900'
+                  }`}
+                >
+                  {checkoutProcessing ? 'Memproses...' : 'Lanjut ke Pembayaran'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Modal Pilih Alamat */}
+      {addressModalOpen && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-xl w-[90%] max-w-lg max-h-[80vh] p-4 shadow-xl flex flex-col">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-lg font-semibold text-black">Pilih Alamat</h3>
+              <button onClick={() => setAddressModalOpen(false)} className="text-gray-600 hover:text-black">
+                Tutup
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+              {addrLoading ? (
+                <div className="text-sm text-gray-500 p-4">Memuat alamat...</div>
+              ) : addresses.length === 0 ? (
+                <div className="text-sm text-gray-500 p-4">
+                  Tambahkan alamat dahulu di profile Anda.
+                </div>
+              ) : (
+                addresses.map((a) => (
+                  <div key={a.id} className="border rounded-lg p-4 hover:bg-gray-50">
+                    <div className="flex justify-between items-start gap-3">
+                      <div className="text-sm text-gray-800 space-y-1">
+                        <div className="font-semibold text-black">{a.nama_alamat}</div>
+                        <div>{a.nama_penerima} ({a.no_telp})</div>
+                        <div>{a.provinsi}, {a.kabupaten}, {a.kecamatan}</div>
+                        <div>{a.alamat_lengkap}</div>
+                      </div>
+                      <button
+                        onClick={() => chooseAddress(a)}
+                        className="px-3 py-1.5 text-sm bg-black text-white rounded-md hover:bg-gray-800"
+                      >
+                        Pilih
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <Footer />
     </>
   )

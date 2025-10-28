@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { Eye, EyeOff } from 'lucide-react' // 👈 pastikan lucide-react sudah terinstall
 
 export default function NewPassword() {
     const router = useRouter()
@@ -11,16 +12,18 @@ export default function NewPassword() {
 
     const [password, setPassword] = useState('')
     const [conPass, setConPass] = useState('')
+    const [showPassword, setShowPassword] = useState(false)
+    const [showConPass, setShowConPass] = useState(false)
     const [loading, setLoading] = useState(false)
     const [errorMsg, setErrorMsg] = useState('')
 
-    // optionally focus input on mount
+    // Fokus ke input pertama saat load
     useEffect(() => {
-        const el = document.getElementById('otp-input')
-        if (el) (el as HTMLInputElement).focus()
+        const el = document.getElementById('password-input')
+        el?.focus()
     }, [])
 
-    // New: auto-hide notification after 4 seconds
+    // Sembunyikan notifikasi otomatis
     useEffect(() => {
         if (!errorMsg) return
         const id = setTimeout(() => setErrorMsg(''), 3000)
@@ -31,6 +34,12 @@ export default function NewPassword() {
         e.preventDefault()
         setErrorMsg('')
         setLoading(true)
+
+        if (password !== conPass) {
+            setErrorMsg('Password dan konfirmasi tidak sama!')
+            setLoading(false)
+            return
+        }
 
         try {
             const res = await fetch('http://127.0.0.1:8000/api/reset-password', {
@@ -48,14 +57,14 @@ export default function NewPassword() {
 
             if (!res.ok) {
                 setErrorMsg(data.message || 'Gagal mengganti password')
-                setLoading(false)
                 return
             }
 
-            // success -> redirect to SignIn with success flag
+            alert('Password berhasil diubah! Silakan login kembali.')
             router.push('/page/sigin?reset=1')
         } catch (err) {
-            setErrorMsg('Password tidak sama, coba lagi')
+            console.error(err)
+            setErrorMsg('Terjadi kesalahan. Silakan coba lagi.')
         } finally {
             setLoading(false)
         }
@@ -66,14 +75,13 @@ export default function NewPassword() {
             {/* 🔹 Background Video */}
             <video
                 className="absolute inset-0 w-full h-full object-cover"
-                src="/images/video1.mp4" // ubah sesuai path video kamu
+                src="/images/video1.mp4"
                 autoPlay
                 loop
                 muted
             ></video>
 
-            {/* 🔹 Overlay hitam transparan */}
-
+            {/* 🔹 Notifikasi Error */}
             {errorMsg && (
                 <div className="fixed left-1/2 transform -translate-x-1/2 top-4 z-50">
                     <div className="bg-red-600 text-white px-6 py-2 rounded shadow-md animate-slideDown">
@@ -81,40 +89,59 @@ export default function NewPassword() {
                     </div>
                 </div>
             )}
-            {/* 🔹 Form Verifikasi */}
-            <div className="relative z-10 bg-black/40 backdrop-blur-md p-8 rounded-2xl w-96 max-w-full text-center shadow-xl border border-gray-700">
-                <h1 className="text-white text-2xl font-semibold mb-2">
-                    Ganti Password
-                </h1>
-                <p className="text-gray-300 text-sm mb-6">
-                    Ganti Password anda dengan yang baru
-                </p>
 
-                <form onSubmit={handleReset}>
-                    <input
-                        id="otp-input"
-                        type="password"
-                        placeholder="Masukkan Password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        required
-                        className="w-full px-4 py-2 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-white mb-4 border border-white"
-                    />
-                    <input
-                        id="otp-input"
-                        type="password"
-                        placeholder="Konfirmasi Password"
-                        value={conPass}
-                        onChange={(e) => setConPass(e.target.value)}
-                        required
-                        className="w-full px-4 py-2 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-white mb-4 border border-white"
-                    />
+            {/* 🔹 Form Reset Password */}
+            <div className="relative z-10 bg-black/40 backdrop-blur-md p-8 rounded-2xl w-96 max-w-full text-center shadow-xl border border-gray-700">
+                <h1 className="text-white text-2xl font-semibold mb-2">Ganti Password</h1>
+                <p className="text-gray-300 text-sm mb-6">Masukkan password baru kamu</p>
+
+                <form onSubmit={handleReset} className="space-y-4">
+                    {/* Input Password */}
+                    <div className="relative">
+                        <input
+                            id="password-input"
+                            type={showPassword ? 'text' : 'password'}
+                            placeholder="Password Baru"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                            className="w-full px-4 py-2 rounded-md text-white bg-transparent border border-white focus:outline-none focus:ring-2 focus:ring-white"
+                        />
+                        <button
+                            type="button"
+                            onClick={() => setShowPassword((p) => !p)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-white"
+                        >
+                            {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                        </button>
+                    </div>
+
+                    {/* Input Konfirmasi Password */}
+                    <div className="relative">
+                        <input
+                            type={showConPass ? 'text' : 'password'}
+                            placeholder="Konfirmasi Password"
+                            value={conPass}
+                            onChange={(e) => setConPass(e.target.value)}
+                            required
+                            className="w-full px-4 py-2 rounded-md text-white bg-transparent border border-white focus:outline-none focus:ring-2 focus:ring-white"
+                        />
+                        <button
+                            type="button"
+                            onClick={() => setShowConPass((p) => !p)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-white"
+                        >
+                            {showConPass ? <EyeOff size={20} /> : <Eye size={20} />}
+                        </button>
+                    </div>
+
+                    {/* Tombol Submit */}
                     <button
                         type="submit"
                         disabled={loading}
                         className="w-full py-2 bg-white text-black rounded-md font-semibold hover:bg-gray-200 transition disabled:opacity-60"
                     >
-                        {loading ? 'Loading...' : 'Ubah'}
+                        {loading ? 'Loading...' : 'Ubah Password'}
                     </button>
                 </form>
             </div>

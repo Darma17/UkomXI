@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\Mime\Part\TextPart;
 use Illuminate\Support\Str;
@@ -45,10 +46,83 @@ class UserController extends Controller
             'name' => 'sometimes|string',
             'email' => 'sometimes|email|unique:users,email,' . $user->id,
             'role' => 'sometimes|in:customer,admin',
+            // file upload tanpa bergantung pada mimetypes/image
+            'profile_image' => 'nullable|file|max:5120',
+            'profile_image_path' => 'sometimes|string',
         ]);
 
-        $user->update($validated);
-        return response()->json($user);
+        try {
+            // 1) Upload file (tanpa finfo, pakai move())
+            if ($request->hasFile('profile_image')) {
+                $file = $request->file('profile_image');
+                if (! $file->isValid()) {
+                    Log::warning('Invalid upload for profile_image', ['user_id' => $user->id]);
+                    return response()->json(['message' => 'File upload tidak valid'], 422);
+                }
+
+                $origName = (string) $file->getClientOriginalName();
+                $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+                $allowed = ['jpg','jpeg','png','webp'];
+                if (!in_array($ext, $allowed, true)) {
+                    Log::warning('Unsupported profile_image extension', ['user_id' => $user->id, 'ext' => $ext, 'name' => $origName]);
+                    return response()->json(['message' => 'Ekstensi file tidak didukung. Izinkan: jpg, jpeg, png, webp'], 422);
+                }
+
+                // siapkan direktori tujuan (storage/app/public/profile)
+                $dest = storage_path('app/public/profile');
+                if (!is_dir($dest)) {
+                    @mkdir($dest, 0775, true);
+                }
+
+                $filename = 'u'.$user->id.'_'.time().'_'.\Illuminate\Support\Str::random(6).'.'.$ext;
+                $targetPath = $dest.DIRECTORY_SEPARATOR.$filename;
+                $relative = 'profile/'.$filename;
+
+                // Pindahkan file tanpa melalui Storage (hindari finfo)
+                $file->move($dest, $filename);
+
+                if (!is_file($targetPath)) {
+                    Log::error('Gagal menyimpan file ke disk public (move failed)', ['user_id' => $user->id, 'path' => $targetPath]);
+                    return response()->json(['message' => 'Gagal menyimpan file'], 500);
+                }
+
+                // hapus foto lama jika ada (pakai unlink)
+                if (!empty($user->profile_image)) {
+                    $oldAbs = storage_path('app/public/'.ltrim($user->profile_image, '/'));
+                    if (is_file($oldAbs)) {
+                        @unlink($oldAbs);
+                    }
+                }
+
+                $user->profile_image = $relative;
+            }
+            // 2) Set dari path yang sudah ada
+            elseif ($request->filled('profile_image_path')) {
+                $raw = (string) $request->input('profile_image_path');
+                $normalized = str_starts_with($raw, 'profile/') ? $raw : ('profile/' . ltrim($raw, '/'));
+                $abs = storage_path('app/public/'.$normalized);
+                if (!is_file($abs)) {
+                    return response()->json(['message' => 'File tidak ditemukan di storage/public', 'path_checked' => $normalized], 422);
+                }
+                if (!empty($user->profile_image)) {
+                    $oldAbs = storage_path('app/public/'.ltrim($user->profile_image, '/'));
+                    if (is_file($oldAbs)) {
+                        @unlink($oldAbs);
+                    }
+                }
+                $user->profile_image = $normalized;
+            }
+
+            if ($request->has('name')) { $user->name = (string)$request->input('name'); }
+            if ($request->has('email')) { $user->email = (string)$request->input('email'); }
+            if ($request->has('role'))  { $user->role  = (string)$request->input('role'); }
+
+            $user->save();
+            return response()->json($user);
+        } catch (\Throwable $e) {
+            Log::error('Failed to update user/profile image', ['user_id' => $user->id, 'error' => $e->getMessage()]);
+            return response()->json(['message' => 'Gagal memperbarui profil'], 500);
+        }
     }
 
     public function destroy(User $user)
@@ -407,7 +481,19 @@ class UserController extends Controller
         Cache::forget($otpKey);
         Cache::forget($userKey);
 
-        return response()->json(['message' => 'Pendaftaran berhasil. Silakan login'], 201);
+        // create Sanctum token and return it so client can auto-login
+        try {
+            $token = $newUser->createToken('register')->plainTextToken;
+        } catch (\Throwable $e) {
+            Log::error('Failed to create token after register', ['err' => $e->getMessage(), 'user_email' => $newUser->email]);
+            return response()->json(['message' => 'Pendaftaran berhasil, tetapi gagal membuat sesi otomatis. Silakan login.'], 201);
+        }
+
+        return response()->json([
+            'message' => 'Pendaftaran berhasil',
+            'user' => $newUser,
+            'token' => $token
+        ], 201);
     }
     public function googleLogin(Request $request)
     {
@@ -415,34 +501,119 @@ class UserController extends Controller
             'token' => 'required|string',
         ]);
 
-        // Verifikasi token Google
-        $response = file_get_contents('https://oauth2.googleapis.com/tokeninfo?id_token=' . $request->token);
-        $googleUser = json_decode($response, true);
+        // Verifikasi token Google (id_token)
+        try {
+            $response = @file_get_contents('https://oauth2.googleapis.com/tokeninfo?id_token=' . $request->token);
+            $googleUser = json_decode($response, true);
+        } catch (\Throwable $e) {
+            $googleUser = null;
+        }
 
-        if (!isset($googleUser['email'])) {
+        if (!is_array($googleUser) || !isset($googleUser['email'])) {
             return response()->json(['message' => 'Token Google tidak valid'], 401);
         }
 
         $email = $googleUser['email'];
 
-        // Cek apakah user sudah ada
+        // Jika user belum ada, buat otomatis (role customer)
         $user = \App\Models\User::where('email', $email)->first();
-
-        if (!$user) {
-            return response()->json([
-                'message' => 'Akun Google Anda belum terdaftar di sistem kami'
-            ], 403);
+        if (! $user) {
+            $name = $googleUser['name'] ?? explode('@', $email)[0];
+            $user = \App\Models\User::create([
+                'name' => $name,
+                'email' => $email,
+                'password' => Hash::make(Str::random(16)),
+                'role' => 'customer',
+                'profile_image' => null,
+            ]);
         }
 
-        // Buat token Sanctum
+        // Buat dan kembalikan token Sanctum (client akan simpan dan redirect ke beranda)
         $token = $user->createToken('google-login')->plainTextToken;
 
         return response()->json([
             'message' => 'Login Google berhasil',
             'user' => $user,
             'token' => $token,
-        ]);
+        ], 200);
     }
 
+    // Upload foto profil untuk user yang sedang login (via Sanctum)
+    public function uploadProfileImage(Request $request)
+    {
+        $user = $request->user();
+        if (! $user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $request->validate([
+            'profile_image' => 'nullable|file|max:5120',
+            'image'         => 'nullable|file|max:5120',
+        ]);
+
+        try {
+            $file = $request->file('profile_image') ?? $request->file('image');
+            if (! $file) {
+                Log::warning('No file received for profile_image', ['user_id' => $user->id]);
+                return response()->json(['message' => 'Tidak ada file yang diunggah (gunakan key: profile_image atau image)'], 422);
+            }
+            if (! $file->isValid()) {
+                Log::warning('Invalid upload for profile_image', ['user_id' => $user->id]);
+                return response()->json(['message' => 'File upload tidak valid'], 422);
+            }
+
+            $origName = (string) $file->getClientOriginalName();
+            $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+            $allowed = ['jpg','jpeg','png','webp'];
+            if (!in_array($ext, $allowed, true)) {
+                Log::warning('Unsupported profile_image extension', ['user_id' => $user->id, 'ext' => $ext, 'name' => $origName]);
+                return response()->json(['message' => 'Ekstensi file tidak didukung. Izinkan: jpg, jpeg, png, webp'], 422);
+            }
+
+            Log::info('Incoming profile image', [
+                'user_id' => $user->id,
+                'size'    => $file->getSize(),
+                'name'    => $origName,
+                'ext'     => $ext,
+            ]);
+
+            // tulis manual dengan move() — tidak lewat Storage (hindari finfo)
+            $dest = storage_path('app/public/profile');
+            if (!is_dir($dest)) {
+                @mkdir($dest, 0775, true);
+            }
+
+            $filename = 'u'.$user->id.'_'.time().'_'.\Illuminate\Support\Str::random(6).'.'.$ext;
+            $targetPath = $dest.DIRECTORY_SEPARATOR.$filename;
+            $relative = 'profile/'.$filename;
+
+            $file->move($dest, $filename);
+
+            if (!is_file($targetPath)) {
+                Log::error('Gagal menyimpan file ke disk public (move failed)', ['user_id' => $user->id, 'path' => $targetPath]);
+                return response()->json(['message' => 'Gagal menyimpan file (cek permission storage/app/public dan symlink)'], 500);
+            }
+
+            // hapus foto lama jika ada
+            if (!empty($user->profile_image)) {
+                $oldAbs = storage_path('app/public/'.ltrim($user->profile_image, '/'));
+                if (is_file($oldAbs)) {
+                    @unlink($oldAbs);
+                }
+            }
+
+            $user->profile_image = $relative;
+            $user->save();
+
+            Log::info('Profile image updated', ['user_id' => $user->id, 'path' => $relative]);
+            return response()->json($user, 200);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Upload profile image failed', [
+                'user_id' => $user->id ?? null,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json(['message' => 'Gagal memperbarui profil: ' . $e->getMessage()], 500);
+        }
+    }
 }
 

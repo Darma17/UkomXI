@@ -21,6 +21,14 @@ Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
 
+// Upload foto profil user yang sedang login
+Route::post('user/profile-image', [UserController::class, 'uploadProfileImage'])->middleware('auth:sanctum');
+
+// Alias tambahan agar tidak 405 ketika client salah path/method
+Route::match(['POST', 'PUT'], 'users/profile-image', [UserController::class, 'uploadProfileImage'])->middleware('auth:sanctum');
+// Alias untuk salah ketik "profil-image"
+Route::match(['POST', 'PUT'], 'users/profil-image', [UserController::class, 'uploadProfileImage'])->middleware('auth:sanctum');
+
 Route::get('books/highlight', [BookController::class, 'highlights']);
 
 Route::apiResources([
@@ -34,8 +42,13 @@ Route::apiResources([
     'order-items' => OrderItemController::class,
     'reviews' => ReviewController::class,
     'wishlists' => WishlistController::class,
-    'addresses' => AddressController::class,
 ]);
+
+// Ambil semua alamat milik user yang sedang login
+Route::get('addresses/me', [AddressController::class, 'me'])->middleware('auth:sanctum');
+
+// Lindungi seluruh CRUD addresses (membutuhkan Bearer token)
+Route::apiResource('addresses', AddressController::class)->middleware('auth:sanctum');
 
 
 // Route utama CRUD Book Discount

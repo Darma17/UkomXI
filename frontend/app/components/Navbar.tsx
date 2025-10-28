@@ -407,35 +407,10 @@ export default function Navbar() {
                     onMouseEnter={() => setShowProfileMenu(true)}
                     onMouseLeave={() => setShowProfileMenu(false)}
                   >
-                    <User className={`w-6 h-6 ${iconColor} cursor-pointer`} />
-
-                    {showProfileMenu && (
-                      <div className="absolute right-0 mt-1 w-56 bg-white text-gray-800 rounded-xl shadow-lg border border-gray-200 p-4 z-50">
-                        {/* avatar */}
-                        <div className="flex flex-col items-center">
-                          <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-gray-200 mb-3">
-                            <img
-                              src={
-                                profile && profile.profile_image
-                                  ? `http://127.0.0.1:8000/storage/profile/${profile.profile_image}`
-                                  : "/images/profile.png"
-                              }
-                              alt="avatar"
-                              className="w-full h-full object-cover"
-                            />
-                          </div>
-                          <div className="text-lg font-semibold text-gray-900">{profile?.name || ''}</div>
-                          <div className="text-sm text-gray-500 mb-3">{profile?.email || ''}</div>
-
-                          <button
-                            onClick={handleLogout}
-                            className="mt-1 w-full border border-red-500 text-red-500 py-2 rounded-md hover:bg-red-500 hover:text-white transition"
-                          >
-                            Logout
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                    <Link href="/page/profile">
+                      <User className={`w-6 h-6 ${iconColor} cursor-pointer`}/>
+                    </Link>
+                    
                   </div>
                 ) : (
                   // If not logged in: keep hover popup behavior
