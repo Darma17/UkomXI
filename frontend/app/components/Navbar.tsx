@@ -553,8 +553,8 @@ export default function Navbar() {
           {[
             { href: "/", label: "Beranda" },
             { href: "/page/explore", label: "Jelajahi" },
-            // { href: "/signin", label: "Kategori" },
             { href: "/page/about", label: "Tentang Kami" },
+            { href: "/page/hubungi-kami", label: "Hubungi Kami" },
           ].map((item) => (
             <Link
               key={item.href}

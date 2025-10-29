@@ -17,6 +17,7 @@ return new class extends Migration
             $table->foreignId('book_id')->constrained('books')->cascadeOnDelete();
             $table->integer('quantity');
             $table->decimal('price', 10, 2);
+            $table->boolean('is_review')->default(false); // NEW: tandai apakah item sudah direview (0/1), default 0
             $table->timestamps();
         });
     }

@@ -615,5 +615,48 @@ class UserController extends Controller
             return response()->json(['message' => 'Gagal memperbarui profil: ' . $e->getMessage()], 500);
         }
     }
+    // Kirim pesan "Hubungi Kami" ke email admin (Gmail)
+    public function contact(Request $request)
+    {
+        $data = $request->validate([
+            'name' => 'required|string|max:190',
+            'email' => 'required|email',
+            'subject' => 'required|string|max:190',
+            'message' => 'required|string',
+        ]);
+
+        // Tujuan email (Gmail Anda)
+        $to = 'bukuku.real@gmail.com';
+
+        $html = '
+        <!doctype html><html><head><meta charset="utf-8"></head>
+        <body style="font-family:Arial,sans-serif;background:#f7f9fb;margin:0;padding:20px;">
+          <div style="max-width:640px;margin:0 auto;background:#fff;border:1px solid #e8eef4;border-radius:10px;overflow:hidden;">
+            <div style="background:#111;color:#fff;padding:16px 20px;font-weight:700">Pesan Baru — Hubungi Kami (BukuKu)</div>
+            <div style="padding:20px">
+              <p style="margin:0 0 8px;color:#111"><strong>Nama:</strong> '.htmlspecialchars($data['name']).'</p>
+              <p style="margin:0 0 8px;color:#111"><strong>Email:</strong> '.htmlspecialchars($data['email']).'</p>
+              <p style="margin:0 0 12px;color:#111"><strong>Subjek:</strong> '.htmlspecialchars($data['subject']).'</p>
+              <div style="margin-top:12px;padding:14px;border:1px solid #e8eef4;border-radius:8px;background:#fafbfc;color:#333;white-space:pre-wrap;">'
+                . nl2br(e($data['message'])) .
+              '</div>
+            </div>
+            <div style="padding:12px 20px;background:#fafafa;border-top:1px solid #eef2f6;color:#888;font-size:12px">Email ini dikirim otomatis dari formulir Hubungi Kami.</div>
+          </div>
+        </body></html>';
+
+        try {
+            \Illuminate\Support\Facades\Mail::html($html, function ($m) use ($to, $data) {
+                $m->to($to)
+                  ->subject('[BukuKu] ' . $data['subject'])
+                  ->from(config('mail.from.address', env('MAIL_FROM_ADDRESS')), config('mail.from.name', env('MAIL_FROM_NAME', 'BukuKu')));
+            });
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Contact mail failed', ['err' => $e->getMessage()]);
+            return response()->json(['message' => 'Gagal mengirim email'], 500);
+        }
+
+        return response()->json(['message' => 'Pesan terkirim'], 200);
+    }
 }
 

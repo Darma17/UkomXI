@@ -51,8 +51,9 @@ export default function Footer() {
           <h3 className="text-lg font-semibold mb-4">Navigasi</h3>
           <ul className="space-y-3 text-gray-300">
             <li><Link href="/" className="hover:text-white transition">Beranda</Link></li>
-            <li><Link href="/books" className="hover:text-white transition">Jelajahi</Link></li>
-            <li><Link href="/about" className="hover:text-white transition">Tentang Kami</Link></li>
+            <li><Link href="/page/explore" className="hover:text-white transition">Jelajahi</Link></li>
+            <li><Link href="/page/about" className="hover:text-white transition">Tentang Kami</Link></li>
+            <li><Link href="/page/hubungi-kami" className="hover:text-white transition">Hubungi Kami</Link></li>
           </ul>
         </div>
 
@@ -60,11 +61,11 @@ export default function Footer() {
         <div>
           <h3 className="text-lg font-semibold mb-4">Kategori</h3>
           <ul className="space-y-3 text-gray-300">
-            <li><Link href="#" className="hover:text-white transition">Teknologi</Link></li>
-            <li><Link href="#" className="hover:text-white transition">Novel</Link></li>
-            <li><Link href="#" className="hover:text-white transition">Pendidikan</Link></li>
-            <li><Link href="#" className="hover:text-white transition">Bisnis</Link></li>
-            <li><Link href="#" className="hover:text-white transition">Pengembangan Diri</Link></li>
+            <li><Link href="/page/category/1" className="hover:text-white transition">Komik & Novel</Link></li>
+            <li><Link href="/page/category/2" className="hover:text-white transition">Agama</Link></li>
+            <li><Link href="/page/category/3" className="hover:text-white transition">Fiksi</Link></li>
+            <li><Link href="/page/category/4" className="hover:text-white transition">Pendidikan</Link></li>
+            <li><Link href="/page/category/5" className="hover:text-white transition">Pengembangan Diri</Link></li>
           </ul>
         </div>
       </div>

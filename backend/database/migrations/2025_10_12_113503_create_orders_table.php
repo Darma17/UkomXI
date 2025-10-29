@@ -14,15 +14,18 @@ return new class extends Migration
         Schema::create('orders', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
+            // alamat tujuan pengiriman (opsional) — tanpa FK untuk menghindari error urutan migration
+            $table->foreignId('address_id')->nullable()->index();
             $table->string('order_code')->unique();
             $table->foreignId('discount_id')->nullable()->constrained('discounts')->nullOnDelete();
             $table->decimal('total_price', 10, 2);
             // allowed statuses: proses, diantar, selesai
-            $table->enum('status', ['proses', 'diantar', 'selesai', 'cancelled'])->default('proses');
+            $table->enum('status', ['proses', 'dibayar', 'dikemas', 'diantar', 'selesai', 'cancelled'])->default('proses');
+            // NEW: complete flag (0/1), default 0
+            $table->boolean('complete')->default(false);
             $table->timestamps();
         });
     }
-
 
     /**
      * Reverse the migrations.

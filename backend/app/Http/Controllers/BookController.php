@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Book;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class BookController extends Controller
 {
@@ -35,7 +36,16 @@ class BookController extends Controller
 
     public function show(Book $book)
     {
-        return response()->json($book->load('category', 'reviews'));
+        // Eager load user pada setiap review agar nama user tampil di FE
+        $book->load('category', 'reviews.user');
+        // Hitung total terjual (qty) dari order_items untuk buku ini pada orders yang complete = 1
+        $sold = DB::table('order_items')
+            ->join('orders', 'orders.id', '=', 'order_items.order_id')
+            ->where('order_items.book_id', $book->id)
+            ->where('orders.complete', 1)
+            ->sum('order_items.quantity');
+        $book->setAttribute('sold_count', (int) $sold);
+        return response()->json($book);
     }
 
     public function store(Request $request)

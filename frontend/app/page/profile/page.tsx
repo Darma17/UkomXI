@@ -157,12 +157,83 @@ export default function Profile() {
     }
   }
 
+  // Tipe Order dan OrderItem untuk riwayat pesanan
+  type OrderItemT = {
+    id: number
+    book_id: number
+    quantity: number
+    price: number
+    book?: { title?: string; author?: string | null; cover_image?: string | null }
+  }
+  type OrderT = {
+    id: number
+    user_id: number
+    order_code: string
+    total_price: number
+    status: string
+    created_at?: string
+    items?: OrderItemT[]
+    complete?: number | boolean
+  }
+  const [orders, setOrders] = useState<OrderT[]>([])
+  const [ordersLoading, setOrdersLoading] = useState(false)
+  const [ordersError, setOrdersError] = useState<string>('')
+
+  // Loader riwayat pesanan user
+  async function fetchOrders() {
+    const token = localStorage.getItem('authToken') || ''
+    setOrdersLoading(true)
+    setOrdersError('')
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/orders', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) {
+        setOrders([])
+        setOrdersError('Gagal memuat riwayat pesanan')
+        return
+      }
+      const data: any[] = await res.json()
+      const list: OrderT[] = Array.isArray(data) ? data : []
+      const mine = userId ? list.filter(o => Number(o.user_id) === Number(userId)) : list
+      // urutkan terbaru dulu
+      const sorted = [...mine].sort((a, b) => {
+        const ta = a.created_at ? new Date(a.created_at).getTime() : 0
+        const tb = b.created_at ? new Date(b.created_at).getTime() : 0
+        return tb - ta
+      })
+      setOrders(sorted)
+    } catch {
+      setOrders([])
+      setOrdersError('Gagal memuat riwayat pesanan')
+    } finally {
+      setOrdersLoading(false)
+    }
+  }
+
+  // Helper format tanggal Indonesia
+  function formatIdDate(dt?: string) {
+    if (!dt) return '-'
+    try {
+      return new Date(dt).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
+    } catch {
+      return dt
+    }
+  }
+
   // Muat alamat ketika tab "alamat" dipilih pertama kali
   useEffect(() => {
     if (activeTab === 'alamat') {
       fetchAddresses()
     }
   }, [activeTab])
+
+  // Muat riwayat ketika tab "riwayat" dibuka dan userId sudah ada
+  useEffect(() => {
+    if (activeTab === 'riwayat' && userId) {
+      fetchOrders()
+    }
+  }, [activeTab, userId])
 
   // Tipe dan state alamat
   interface Address {
@@ -369,26 +440,92 @@ export default function Profile() {
     }
   }
 
-  const orderHistory = [
-    {
-      id: 1,
-      date: '12 September 2025',
-      items: [
-        { id: 1, name: 'Buku React Modern', price: 85000, qty: 1, image: '/images/dummyImage.jpg' },
-        { id: 2, name: 'Buku Tailwind CSS', price: 65000, qty: 2, image: '/images/dummyImage.jpg' },
-      ]
-    },
-    {
-      id: 2,
-      date: '10 September 2025',
-      items: [
-        { id: 3, name: 'Buku Next.js', price: 75000, qty: 1, image: '/images/dummyImage.jpg' },
-        { id: 4, name: 'Buku JavaScript Dasar', price: 55000, qty: 3, image: '/images/dummyImage.jpg' },
-      ]
-    },
-  ]
-  // Alias untuk menangani salah ketik "orderhHistory"
-  const orderhHistory = orderHistory
+  // State untuk review modal
+  const [reviewModalOpen, setReviewModalOpen] = useState(false)
+  const [reviewSaving, setReviewSaving] = useState(false)
+  const [reviewRating, setReviewRating] = useState<number>(0)
+  const [reviewComment, setReviewComment] = useState<string>('')
+  const [selectedReview, setSelectedReview] = useState<{ orderId: number; itemId: number; bookId: number } | null>(null)
+
+  function openReviewModal(orderId: number, itemId: number, bookId: number) {
+    setSelectedReview({ orderId, itemId, bookId })
+    setReviewRating(0)
+    setReviewComment('')
+    setReviewModalOpen(true)
+  }
+  function closeReviewModal() {
+    setReviewModalOpen(false)
+    setSelectedReview(null)
+    setReviewRating(0)
+    setReviewComment('')
+  }
+
+  async function submitReview() {
+    if (!selectedReview || !userId || reviewRating < 1) return
+    const token = localStorage.getItem('authToken') || ''
+    setReviewSaving(true)
+    try {
+      // 1) Simpan review
+      await fetch('http://127.0.0.1:8000/api/reviews', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          book_id: selectedReview.bookId,
+          rating: reviewRating,
+          comment: reviewComment || null,
+        }),
+      })
+      // 2) Tandai item sudah direview
+      await fetch(`http://127.0.0.1:8000/api/order-items/${selectedReview.itemId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ is_review: 1 }),
+      })
+      // 3) Update UI lokal
+      setOrders(prev => prev.map(o => {
+        if (o.id !== selectedReview.orderId) return o
+        return {
+          ...o,
+          items: (o.items || []).map(it => it.id === selectedReview.itemId ? { ...it, /* @ts-ignore */ is_review: 1 } : it)
+        }
+      }))
+      closeReviewModal()
+    } catch {
+      // optional: tampilkan error
+    } finally {
+      setReviewSaving(false)
+    }
+  }
+
+  // Konfirmasi pesanan diterima (set complete = 1)
+  const [completingOrderId, setCompletingOrderId] = useState<number | null>(null)
+  async function confirmOrderReceived(orderId: number) {
+    const token = localStorage.getItem('authToken') || ''
+    if (!token) return
+    setCompletingOrderId(orderId)
+    try {
+      await fetch(`http://127.0.0.1:8000/api/orders/${orderId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ complete: 1 }),
+      })
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, complete: 1 } : o))
+    } catch {
+      // ignore
+    } finally {
+      setCompletingOrderId(null)
+    }
+  }
 
   return (
     <>
@@ -525,46 +662,91 @@ export default function Profile() {
         {/* Konten Tab */}
         <div className="w-full max-w-2xl">
             {activeTab === 'riwayat' ? (
-            <div
-                className="space-y-6 max-h-[400px] overflow-y-auto pr-2"
-                style={{ scrollbarWidth: 'thin' }}
-            >
-                {orderHistory.map((order) => (
-                <div
-                    key={order.id}
-                    className="bg-white p-4 rounded-xl shadow-md border"
-                >
-                    <p className="text-sm text-black mb-3">
-                    Tanggal Belanja:{' '}
-                    <span className="font-medium text-black">{order.date}</span>
-                    </p>
-                    <div className="space-y-3">
-                    {order.items.map((item) => (
-                        <div key={item.id} className="flex items-center gap-4">
-                        <div className="relative w-16 h-16 rounded-lg overflow-hidden border">
-                            <Image
-                            src={item.image}
-                            alt={item.name}
-                            fill
-                            className="object-cover"
-                            />
+          <div className="space-y-6 max-h-[460px] overflow-y-auto pr-2" style={{ scrollbarWidth: 'thin' }}>
+             {ordersLoading ? (
+               <div className="text-sm text-gray-500">Memuat riwayat pesanan...</div>
+             ) : ordersError ? (
+               <div className="text-sm text-red-600">{ordersError}</div>
+             ) : orders.length === 0 ? (
+               <div className="text-sm text-gray-500">Belum ada pesanan.</div>
+             ) : (
+               orders.map((order) => (
+                 <div key={order.id} className="bg-white p-4 rounded-xl shadow-md border">
+                   <p className="text-sm text-black mb-3">
+                     Tanggal Belanja:{' '}
+                     <span className="font-medium text-black">{formatIdDate(order.created_at)}</span>
+                   </p>
+                   <div className="space-y-3">
+                     {(order.items || []).map((it) => {
+                       const img = it.book?.cover_image
+                         ? `http://127.0.0.1:8000/storage/${it.book.cover_image}`
+                         : '/images/dummyImage.jpg'
+                       const title = it.book?.title || `#${it.book_id}`
+                       const author = it.book?.author || ''
+                       const alreadyReviewed = (it as any)?.is_review === 1 || (it as any)?.is_review === true
+                        return (
+                         <div key={it.id} className="flex items-center gap-4">
+                           <div className="relative w-16 h-16 rounded-lg overflow-hidden border">
+                             <Image src={img} alt={title} fill className="object-cover" />
+                           </div>
+                           <div className="flex-1">
+                             <p className="font-medium text-black">{title}</p>
+                             {author ? <p className="text-xs text-gray-500">by {author}</p> : null}
+                             <p className="text-black text-sm">
+                               Rp {Number(it.price).toLocaleString('id-ID')} × {it.quantity}
+                             </p>
+                           </div>
+                           <div className="flex items-center gap-3">
+                             <p className="font-semibold text-black">
+                               Rp {(Number(it.price) * Number(it.quantity)).toLocaleString('id-ID')}
+                             </p>
+                             {order.status === 'selesai' && (
+                               alreadyReviewed ? (
+                                 <button
+                                   className="px-3 py-1 border border-green-600 text-green-600 rounded-md text-xs cursor-not-allowed opacity-60"
+                                   disabled
+                                 >
+                                   Sudah Direview
+                                 </button>
+                               ) : (
+                                 <button
+                                   onClick={() => openReviewModal(order.id, it.id, it.book_id)}
+                                   className="px-3 py-1 border border-green-600 text-green-600 rounded-md text-xs hover:bg-green-50"
+                                 >
+                                   Kasih Review
+                                 </button>
+                               )
+                             )}
+                          </div>
                         </div>
-                        <div className="flex-1">
-                            <p className="font-medium text-black">{item.name}</p>
-                            <p className="text-black text-sm">
-                            Rp {item.price.toLocaleString('id-ID')} × {item.qty}
-                            </p>
-                        </div>
-                        <p className="font-semibold text-black">
-                            Rp {(item.price * item.qty).toLocaleString('id-ID')}
-                        </p>
-                        </div>
-                    ))}
-                    </div>
+                      )})}
+                   </div>
+                   <div className="mt-4 pt-3 border-t text-sm flex items-center flex-wrap gap-2">
+                     <span className="text-gray-600">Status:</span>{' '}
+                     <span className="font-semibold text-black capitalize">{order.status}</span>
+                     {order.status === 'selesai' && (
+                       <>
+                         {order.complete ? (
+                           <span className="text-green-700">| Paket sudah diterima</span>
+                         ) : (
+                           <>
+                             <span className="text-gray-600">| Paket anda sudah sampai?</span>
+                             <button
+                               onClick={() => confirmOrderReceived(order.id)}
+                               className={`px-3 py-1 rounded-md border border-green-600 text-green-600 text-xs hover:bg-green-50`}
+                               disabled={completingOrderId === order.id}
+                             >
+                               {completingOrderId === order.id ? 'Menyimpan...' : 'Sudah'}
+                             </button>
+                           </>
+                         )}
+                       </>
+                     )}
                 </div>
-                ))}
-            </div>
-            ) : (
+              </div>
+            )))}
+          </div>
+        ) : (
             <div className="bg-white p-6 rounded-xl shadow-md border relative">
               {/* Header alamat + tombol tambah */}
               <div className="flex justify-between items-center mb-4">
@@ -815,6 +997,43 @@ export default function Profile() {
                   disabled={addrDeleting}
                 >
                   {addrDeleting ? 'Menghapus...' : 'Hapus'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Review */}
+        {reviewModalOpen && selectedReview && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+            <div className="bg-white rounded-xl w-[90%] max-w-md p-5 shadow-xl">
+              <h3 className="text-lg font-semibold text-black mb-3">Kasih Review</h3>
+              <div className="flex items-center gap-2 mb-3">
+                {[1,2,3,4,5].map(star => (
+                  <button
+                    key={star}
+                    onClick={() => setReviewRating(star)}
+                    className="text-2xl"
+                    aria-label={`Beri ${star} bintang`}
+                  >
+                    <span className={star <= reviewRating ? 'text-yellow-500' : 'text-gray-300'}>★</span>
+                  </button>
+                ))}
+              </div>
+              <textarea
+                placeholder="Tulis komentar (opsional)"
+                value={reviewComment}
+                onChange={(e) => setReviewComment(e.target.value)}
+                className="w-full border rounded-md px-3 py-2 min-h-[90px] text-black focus:outline-none focus:ring-2 focus:ring-black"
+              />
+              <div className="flex justify-end gap-3 mt-4">
+                <button onClick={closeReviewModal} className="px-4 py-2 border border-gray-700 text-gray-700 rounded-md">Batal</button>
+                <button
+                  onClick={submitReview}
+                  disabled={reviewSaving || reviewRating < 1}
+                  className={`px-4 py-2 rounded-md text-white ${reviewSaving || reviewRating < 1 ? 'bg-gray-400 cursor-not-allowed' : 'bg-black hover:bg-gray-900'}`}
+                >
+                  {reviewSaving ? 'Menyimpan...' : 'Kirim'}
                 </button>
               </div>
             </div>

@@ -26,6 +26,7 @@ interface Category {
   id: number
   title: string
   image: string
+  linke: string
 }
 
 interface Book {
@@ -40,16 +41,16 @@ interface Book {
 export default function HomePage() {
   const featuredProducts: FeaturedProduct[] = [
     { id: 1, src: "/images/bannerBukuk.jpeg", alt: "BukuKu", title: "BukuKu", subtitle: "Beli Buku dengan Harga Terbaik", buttonText: "Jelajahi Sekarang", link: "/page/explore" },
-    { id: 2, src: "/images/bannerAtomicHabits.jpg", alt: "Atomic Habits", title: "Atomic Habits", subtitle: "Ubah Hidup Anda dengan Perubahan Terkecil!", buttonText: "Pelajari Lebih Lanjut", link: "/page/about" },
-    { id: 3, src: "/images/bannerPomo.jpeg", alt: "The Psychology of Money", title: "The Psychology of Money", subtitle: "The Psychology of Money: Timeless Lessons on Wealth, Greed, and Happiness", buttonText: "Pelajari Lebih Lanjut", link: "/page/explore" },
+    { id: 2, src: "/images/bannerAtomicHabits.jpg", alt: "Atomic Habits", title: "Atomic Habits", subtitle: "Ubah Hidup Anda dengan Perubahan Terkecil!", buttonText: "Pelajari Lebih Lanjut", link: "/page/detail-buku?id=21" },
+    { id: 3, src: "/images/bannerPomo.jpeg", alt: "The Psychology of Money", title: "The Psychology of Money", subtitle: "The Psychology of Money: Timeless Lessons on Wealth, Greed, and Happiness", buttonText: "Pelajari Lebih Lanjut", link: "/page/detail-buku?id=66" },
   ]
 
   const categories: Category[] = [
-    { id: 1, title: "Komik & Novel", image: "/images/komik.avif" },
-    { id: 2, title: "Agama", image: "/images/agama.png" },
-    { id: 3, title: "Fiksi", image: "/images/fiksi.avif" },
-    { id: 4, title: "Pendidikan", image: "/images/pendidikan.png" },
-    { id: 5, title: "Pengembangan Diri", image: "/images/pengembangan.avif" },
+    { id: 1, title: "Komik & Novel", image: "/images/komik.avif", linke:"/page/category/1" },
+    { id: 2, title: "Agama", image: "/images/agama.png", linke:"/page/category/2" },
+    { id: 3, title: "Fiksi", image: "/images/fiksi.avif", linke:"/page/category/3" },
+    { id: 4, title: "Pendidikan", image: "/images/pendidikan.png", linke:"/page/category/4" },
+    { id: 5, title: "Pengembangan Diri", image: "/images/pengembangan.avif", linke:"/page/category/5" },
   ]
 
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -211,21 +212,23 @@ export default function HomePage() {
                 key={cat.id}
                 className="relative group overflow-hidden rounded-xl shadow-md cursor-pointer"
               >
-                <div className="overflow-hidden">
-                  <Image
-                    src={cat.image}
-                    alt={cat.title}
-                    width={400}
-                    height={250}
-                    className="object-cover w-full h-48 md:h-56 transition-transform duration-500 group-hover:scale-110"
-                  />
-                </div>
+                <Link href={cat.linke}>
+                  <div className="overflow-hidden">
+                    <Image
+                      src={cat.image}
+                      alt={cat.title}
+                      width={400}
+                      height={250}
+                      className="object-cover w-full h-48 md:h-56 transition-transform duration-500 group-hover:scale-110"
+                    />
+                  </div>
 
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex items-end">
-                  <h3 className="text-white text-base md:text-lg font-semibold p-4">
-                    {cat.title}
-                  </h3>
-                </div>
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex items-end">
+                    <h3 className="text-white text-base md:text-lg font-semibold p-4">
+                      {cat.title}
+                    </h3>
+                  </div>
+                </Link>
               </div>
             ))}
           </div>

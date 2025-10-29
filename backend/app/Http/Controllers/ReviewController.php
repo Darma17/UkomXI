@@ -17,6 +17,7 @@ class ReviewController extends Controller
         ]);
 
         $review = Review::create($data);
-        return response()->json($review, 201);
+        // Sertakan user pada response agar FE bisa menampilkan nama
+        return response()->json($review->load('user'), 201);
     }
 }

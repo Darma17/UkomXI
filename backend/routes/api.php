@@ -44,6 +44,8 @@ Route::apiResources([
     'wishlists' => WishlistController::class,
 ]);
 
+Route::post('/contact', [UserController::class, 'contact']);
+
 // Ambil semua alamat milik user yang sedang login
 Route::get('addresses/me', [AddressController::class, 'me'])->middleware('auth:sanctum');
 

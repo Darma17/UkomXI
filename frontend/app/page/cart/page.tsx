@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react'
 import Navbar from '@/app/components/Navbar'
 import Footer from '@/app/components/Footer'
 import api from '../../api/api'        // NEW: axios instance
-import { Trash2 } from 'lucide-react' // NEW: trash icon
+import { Link, Trash2 } from 'lucide-react' // NEW: trash icon
 import { useRouter } from 'next/navigation'
 import axios from 'axios'
 
@@ -358,7 +358,10 @@ export default function Cart() {
                  })),
                  total: displayedTotal,
                  midtrans_result: result,
-                 midtrans_order_id: result?.order_id || result?.transaction_details?.order_id || null
+                 midtrans_order_id: result?.order_id || result?.transaction_details?.order_id || null,
+                // kirim alamat yang dipilih user
+                address_id: selectedAddress?.id ?? null,
+                shipping_address: selectedAddress ?? null,
                }
                await api.post('/checkout/complete', payload)
                // notify navbar and redirect to success page
@@ -380,7 +383,9 @@ export default function Cart() {
                  })),
                  total: displayedTotal,
                  midtrans_result: result,
-                 midtrans_order_id: result?.order_id || result?.transaction_details?.order_id || null
+                 midtrans_order_id: result?.order_id || result?.transaction_details?.order_id || null,
+                address_id: selectedAddress?.id ?? null,
+                shipping_address: selectedAddress ?? null,
                }
                await api.post('/checkout/complete', payload)
                window.dispatchEvent(new Event('authChanged'))
@@ -612,7 +617,7 @@ export default function Cart() {
                 <div className="text-sm text-gray-500 p-4">Memuat alamat...</div>
               ) : addresses.length === 0 ? (
                 <div className="text-sm text-gray-500 p-4">
-                  Tambahkan alamat dahulu di profile Anda.
+                  Tambahkan alamat dahulu di profile Anda.<Link href="/profile/addresses" className="text-blue-500 hover:underline"> Tambahkan Alamat</Link>
                 </div>
               ) : (
                 addresses.map((a) => (

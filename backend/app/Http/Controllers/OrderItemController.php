@@ -19,4 +19,15 @@ class OrderItemController extends Controller
         $item = OrderItem::create($data);
         return response()->json($item, 201);
     }
+
+    public function update(Request $request, OrderItem $orderItem)
+    {
+        $data = $request->validate([
+            'quantity' => 'sometimes|integer|min:1',
+            'price' => 'sometimes|numeric',
+            'is_review' => 'sometimes|boolean',
+        ]);
+        $orderItem->update($data);
+        return response()->json($orderItem);
+    }
 }

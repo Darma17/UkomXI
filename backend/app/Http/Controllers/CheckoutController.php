@@ -39,8 +39,16 @@ class CheckoutController extends Controller
             'items.*.title' => 'required|string',
             'items.*.price' => 'required|numeric',
             'items.*.quantity' => 'required|integer|min:1',
-            'total' => 'required|numeric|min:0'
+            'total' => 'required|numeric|min:0',
+            'address_id' => 'nullable|exists:addresses,id',
+            'shipping_address' => 'nullable|array',
         ]);
+
+        // Normalisasi address_id dari shipping_address jika dikirim sebagai objek
+        $addressId = $data['address_id'] ?? null;
+        if (!$addressId && !empty($data['shipping_address']) && is_array($data['shipping_address'])) {
+            $addressId = $data['shipping_address']['id'] ?? null;
+        }
 
         $orderId = 'ORDER-' . time() . '-' . $user->id . '-' . Str::random(6);
 
@@ -117,7 +125,11 @@ class CheckoutController extends Controller
                 PendingPayment::create([
                     'midtrans_order_id' => $orderId,
                     'user_id' => $user->id,
-                    'payload' => json_encode($data['items']),
+                    // simpan items + address_id agar bisa dipakai saat notifikasi
+                    'payload' => json_encode([
+                        'items' => $data['items'],
+                        'address_id' => $addressId,
+                    ]),
                     'total' => $data['total'],
                 ]);
             } catch (\Throwable $e) {
@@ -184,30 +196,34 @@ class CheckoutController extends Controller
         // create order, order_items and clear cart within a DB transaction
         DB::beginTransaction();
         try {
-            // create order
+            // ambil items dan address_id dari payload pending payment
+            $decoded = json_decode($pending->payload, true) ?: [];
+            $items = $decoded['items'] ?? [];
+            $addressId = $decoded['address_id'] ?? null;
+
+            // create order: status dibayar, address_id terisi, complete=0
             $order = Order::create([
-                'user_id' => $pending->user_id,
-                'order_code' => 'ORD-' . strtoupper(Str::random(8)),
+                'user_id'     => $pending->user_id,
+                'order_code'  => 'ORD-' . strtoupper(Str::random(8)),
                 'discount_id' => null,
                 'total_price' => $pending->total,
-                // set initial status to 'proses' as requested
-                'status' => 'proses',
+                'status'      => 'dibayar',
+                'address_id'  => $addressId,
+                'complete'    => 0,
             ]);
 
-            $items = json_decode($pending->payload, true) ?: [];
-
             foreach ($items as $it) {
-                // $it expected shape: {id, price, quantity, name...}
+                // $it expected shape: {book_id, price, quantity, ...}
                 OrderItem::create([
                     'order_id' => $order->id,
                     'book_id' => $it['book_id'] ?? $it['id'] ?? null,
                     'quantity' => (int)($it['quantity'] ?? 1),
-                    // store single-unit price (do not multiply)
                     'price' => (float)($it['price'] ?? 0),
+                    'is_review' => 0,
                 ]);
             }
 
-            // clear user's cart and cart_items
+            // clear cart and delete pending
             $cart = Cart::where('user_id', $pending->user_id)->first();
             if ($cart) {
                 CartItem::where('cart_id', $cart->id)->delete();
@@ -239,68 +255,55 @@ class CheckoutController extends Controller
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
-        $payload = $request->validate([
+        $data = $request->validate([
             'items' => 'required|array|min:1',
-            'items.*.book_id' => 'required|integer',
+            'items.*.book_id' => 'required|integer|exists:books,id',
             'items.*.quantity' => 'required|integer|min:1',
-            'items.*.price' => 'required|numeric', // single-unit price
+            'items.*.price' => 'required|numeric',
             'total' => 'required|numeric|min:0',
-            'midtrans_result' => 'nullable|array',
-            'midtrans_order_id' => 'nullable|string',
+            'address_id' => 'nullable|exists:addresses,id',
+            'shipping_address' => 'nullable|array', // boleh kirim objek alamat dari FE
         ]);
 
-        DB::beginTransaction();
-        try {
-            // create order
+        // Ambil address_id dari shipping_address.id jika ada
+        $addressId = $data['address_id'] ?? null;
+        if (!$addressId && !empty($data['shipping_address']) && is_array($data['shipping_address'])) {
+            $addressId = $data['shipping_address']['id'] ?? null;
+        }
+
+        $order = null;
+
+        DB::transaction(function () use (&$order, $user, $data, $addressId) {
             $order = Order::create([
-                'user_id' => $user->id,
-                'order_code' => 'ORD-' . strtoupper(Str::random(8)),
+                'user_id'     => $user->id,
+                'order_code'  => 'ORD-' . strtoupper(Str::random(10)),
                 'discount_id' => null,
-                'total_price' => $payload['total'],
-                'status' => 'proses',
+                'total_price' => $data['total'],
+                'status'      => 'dibayar',
+                'address_id'  => $addressId,
+                'complete'    => 0,
             ]);
 
-            foreach ($payload['items'] as $it) {
+            foreach ($data['items'] as $it) {
                 OrderItem::create([
-                    'order_id' => $order->id,
-                    'book_id' => $it['book_id'],
-                    'quantity' => (int)$it['quantity'],
-                    'price' => (float)$it['price'], // single unit price
+                    'order_id'  => $order->id,
+                    'book_id'   => $it['book_id'],
+                    'quantity'  => $it['quantity'],
+                    'price'     => $it['price'],
+                    'is_review' => 0,
                 ]);
             }
 
-            // clear user's cart and cart items
+            // Kosongkan keranjang user tanpa mengembalikan stok
             $cart = Cart::where('user_id', $user->id)->first();
             if ($cart) {
-                CartItem::where('cart_id', $cart->id)->delete();
+                CartItem::where('cart_id', $cart->id)->delete(); // HANYA hapus item, stok tidak diubah
                 $cart->total_qty = 0;
                 $cart->total_price = 0;
                 $cart->save();
             }
+        });
 
-            // If there is a pending payment record for this midtrans_order_id, delete it (optional)
-            if (!empty($payload['midtrans_order_id'])) {
-                try {
-                    PendingPayment::where('midtrans_order_id', $payload['midtrans_order_id'])->delete();
-                } catch (\Throwable $e) {
-                    // ignore if model/migration doesn't exist
-                }
-            }
-
-            DB::commit();
-
-            return response()->json([
-                'message' => 'Order created',
-                'order' => $order->load('items')
-            ], 201);
-        } catch (\Throwable $e) {
-            DB::rollBack();
-            Log::error('Failed to create order via complete endpoint', [
-                'err' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'user_id' => $user->id,
-            ]);
-            return response()->json(['message' => 'Failed to create order'], 500);
-        }
+        return response()->json($order->load('items.book', 'address'), 201);
     }
 }

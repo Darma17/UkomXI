@@ -19,8 +19,11 @@ interface Book {
   stock?: number
   cover_image?: string | null
   created_at?: string | null
+  publisher?: string
+  publish_year?: number | string
   category?: { id: number; name: string } | null
   reviews?: Review[] // may be present from API
+  sold_count?: number
 }
 
 interface Review {
@@ -71,6 +74,32 @@ export default function ProductDetail() {
       setAddedMsg('Berhasil ditambahkan ke keranjang')
       window.dispatchEvent(new Event('authChanged'))
       setTimeout(() => setAddedMsg(null), 2000)
+    } catch (err) {
+      console.error(err)
+      if (axios.isAxiosError(err) && err.response?.status === 401) {
+        setShowLoginModal(true)
+      }
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  // NEW: Buy Now -> add to cart then go to cart page
+  const handleBuyNow = async () => {
+    if (!book) return
+    const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null
+    if (!token) {
+      setShowLoginModal(true)
+      return
+    }
+
+    setAdding(true)
+    try {
+      await api.post('/cart/add-item', { book_id: book.id, quantity })
+      // refresh navbar cart badge
+      window.dispatchEvent(new Event('authChanged'))
+      // go to cart page
+      router.push('/page/cart')
     } catch (err) {
       console.error(err)
       if (axios.isAxiosError(err) && err.response?.status === 401) {
@@ -231,13 +260,34 @@ export default function ProductDetail() {
               <h1 className="text-3xl font-semibold mb-2">{book.title}</h1>
               <p className="text-gray-500 mb-6">by {book.author}</p>
 
-              <p className="text-2xl font-semibold mb-6">
-                Rp{" "}
-                {Number(book.price).toLocaleString("id-ID", {
-                  minimumFractionDigits: 0,
-                  maximumFractionDigits: 0,
-                })}
-              </p>
+              <div className="flex items-center gap-3 mb-6">
+                <p className="text-2xl font-semibold">
+                  Rp{" "}
+                  {Number(book.price).toLocaleString("id-ID", {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0,
+                  })}
+                </p>
+                <span className="text-sm text-gray-700 bg-gray-100 px-4 py-1 rounded-full shadow-sm">
+                  Terjual: {Number(book.sold_count ?? 0).toLocaleString('id-ID')}
+                </span>
+              </div>
+
+              {/* Meta info: Publisher, Publish Year, Category */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-700 mb-4">
+                <div>
+                  <span className="text-gray-500">Publisher: </span>
+                  <span className="text-black">{book.publisher || '-'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Tahun Publish: </span>
+                  <span className="text-black">{book.publish_year || '-'}</span>
+                </div>
+                <div className="sm:col-span-2">
+                  <span className="text-gray-500">Kategoru: </span>
+                  <span className="text-black">{book.category?.name || '-'}</span>
+                </div>
+              </div>
 
               <div className="text-gray-700 leading-relaxed mb-8 whitespace-pre-line">
                 {book.description || 'Tidak ada deskripsi.'}
@@ -272,8 +322,12 @@ export default function ProductDetail() {
                 >
                   Tambah ke Keranjang
                 </button>
-                <button className="border border-gray-400 px-6 py-3 rounded-full font-semibold hover:bg-gray-100 transition">
-                  Beli Sekarang
+                <button
+                  onClick={handleBuyNow}
+                  disabled={adding}
+                  className="border border-gray-400 px-6 py-3 rounded-full font-semibold hover:bg-gray-100 transition disabled:opacity-60"
+                >
+                  {adding ? 'Memproses...' : 'Beli Sekarang'}
                 </button>
               </div>
 
@@ -316,34 +370,44 @@ export default function ProductDetail() {
                 </button>
 
                 {reviewsOpen && (
-                  <div className="mt-6 space-y-4">
-                    {book?.reviews && book.reviews.length > 0 ? (
-                      book.reviews.map((r: Review) => (
-                        <div key={r.id} className="pb-4 border-b border-gray-100 last:border-b-0">
-                          <div className="flex items-start justify-between mb-2">
-                            <div className="text-sm font-medium text-gray-900">{r.user?.name || 'Anonymous'}</div>
-                            <div className="flex items-center">
-                              {Array.from({ length: 5 }).map((_, i) => (
-                                <span key={i} className={`text-base ${i < (r.rating || 0) ? 'text-yellow-500' : 'text-gray-200'}`}>★</span>
-                              ))}
-                            </div>
-                          </div>
-                          {r.comment && <div className="text-sm text-gray-600 leading-relaxed">{r.comment}</div>}
-                          {r.created_at && (
-                            <div className="text-xs text-gray-400 mt-2">
-                              {new Date(r.created_at).toLocaleDateString('id-ID', { 
-                                year: 'numeric', 
-                                month: 'long', 
-                                day: 'numeric' 
-                              })}
-                            </div>
+                  <>
+                    {(() => {
+                      const hasScrollable = (book?.reviews?.length || 0) > 5
+                      return (
+                        <div
+                          className={`mt-6 space-y-4 ${hasScrollable ? 'max-h-[420px] overflow-y-auto pr-2' : ''}`}
+                          style={{ scrollbarWidth: 'thin' }}
+                        >
+                          {book?.reviews && book.reviews.length > 0 ? (
+                            book.reviews.map((r: Review) => (
+                              <div key={r.id} className="pb-4 border-b border-gray-100 last:border-b-0">
+                                <div className="flex items-start justify-between mb-2">
+                                  <div className="text-sm font-medium text-gray-900">{r.user?.name || 'Anonymous'}</div>
+                                  <div className="flex items-center">
+                                    {Array.from({ length: 5 }).map((_, i) => (
+                                      <span key={i} className={`text-base ${i < (r.rating || 0) ? 'text-yellow-500' : 'text-gray-200'}`}>★</span>
+                                    ))}
+                                  </div>
+                                </div>
+                                {r.comment && <div className="text-sm text-gray-600 leading-relaxed">{r.comment}</div>}
+                                {r.created_at && (
+                                  <div className="text-xs text-gray-400 mt-2">
+                                    {new Date(r.created_at).toLocaleDateString('id-ID', {
+                                      year: 'numeric',
+                                      month: 'long',
+                                      day: 'numeric'
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            ))
+                          ) : (
+                            <div className="text-sm text-gray-500 py-4">Belum ada review untuk buku ini.</div>
                           )}
                         </div>
-                      ))
-                    ) : (
-                      <div className="text-sm text-gray-500 py-4">Belum ada review untuk buku ini.</div>
-                    )}
-                  </div>
+                      )
+                    })()}
+                  </>
                 )}
               </div>
 
