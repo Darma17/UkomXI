@@ -5,9 +5,10 @@ import Link from "next/link"
 import { useEffect, useState, useRef } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { ChevronLeft, ChevronRight, ShoppingCart } from "lucide-react"
+import { Heart } from "lucide-react"
 import Navbar from "./components/Navbar"
 import Footer from "./components/Footer"
-import api from './api/api' // add axios instance
+import api from './api/api'
 import axios from 'axios'
 import { useRouter } from 'next/navigation'
 
@@ -62,6 +63,7 @@ export default function HomePage() {
   const [pendingBookId, setPendingBookId] = useState<number | null>(null)
   const [adding, setAdding] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
+  const [favoriteSet, setFavoriteSet] = useState<Set<number>>(new Set())
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -75,6 +77,25 @@ export default function HomePage() {
       .then((res) => res.json())
       .then((data: Book[]) => setHighlightBooks(data))
       .catch((err) => console.error(err))
+  }, [])
+
+  // load favorites on auth
+  useEffect(() => {
+    const loadFavs = async () => {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null
+      if (!token) { setFavoriteSet(new Set()); return }
+      try {
+        const res = await api.get('/favorits')
+        const ids = new Set<number>((res.data || []).map((f: any) => Number(f.book_id ?? f.book?.id)))
+        setFavoriteSet(ids)
+      } catch {
+        setFavoriteSet(new Set())
+      }
+    }
+    loadFavs()
+    const onAuthChanged = () => loadFavs()
+    window.addEventListener('authChanged', onAuthChanged)
+    return () => window.removeEventListener('authChanged', onAuthChanged)
   }, [])
 
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -123,6 +144,32 @@ export default function HomePage() {
     } finally {
       setAdding(false)
       setCartClicked(prev => ({ ...prev, [bookId]: true }))
+    }
+  }
+
+  const toggleFavorite = async (e: React.MouseEvent<HTMLButtonElement>, bookId: number) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null
+    if (!token) {
+      setPendingBookId(bookId)
+      setShowLoginModal(true)
+      return
+    }
+    try {
+      if (favoriteSet.has(bookId)) {
+        await api.delete(`/favorits/by-book/${bookId}`)
+        setFavoriteSet(prev => {
+          const next = new Set(prev)
+          next.delete(bookId)
+          return next
+        })
+      } else {
+        await api.post('/favorits', { book_id: bookId })
+        setFavoriteSet(prev => new Set(prev).add(bookId))
+      }
+    } catch (err) {
+      console.error(err)
     }
   }
 
@@ -300,22 +347,31 @@ export default function HomePage() {
                       book.stock === 0 ? "opacity-50" : ""
                     }`}
                   />
-                  
-                  {/* Icon keranjang saat hover (hanya muncul jika stock > 0) */}
-                  {book.stock > 0 && hoveredBook === book.id && (
-                    <button
-                      onClick={(e) => handleCartClick(e, book.id)}
-                      className="absolute top-2 right-2 bg-white p-2 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 z-10"
-                    >
-                      <ShoppingCart 
-                        size={18} 
-                        className={`${
-                          cartClicked[book.id] 
-                            ? 'fill-black text-black' 
-                            : 'text-gray-700'
-                        } transition-all`}
-                      />
-                    </button>
+                  {hoveredBook === book.id && (
+                    <div className="absolute top-2 right-2 flex items-center gap-2 z-10">
+                      <button
+                        onClick={(e) => toggleFavorite(e, book.id)}
+                        className="bg-white p-2 rounded-full shadow-lg hover:shadow-xl transition-all duration-200"
+                        title={favoriteSet.has(book.id) ? 'Hapus Favorit' : 'Tambah Favorit'}
+                      >
+                        <Heart
+                          size={18}
+                          className={favoriteSet.has(book.id) ? 'text-red-500 fill-red-500' : 'text-gray-700'}
+                        />
+                      </button>
+                      {book.stock > 0 && (
+                        <button
+                          onClick={(e) => handleCartClick(e, book.id)}
+                          className="bg-white p-2 rounded-full shadow-lg hover:shadow-xl transition-all duration-200"
+                          title="Tambah ke Keranjang"
+                        >
+                          <ShoppingCart 
+                            size={18} 
+                            className={`${cartClicked[book.id] ? 'fill-black text-black' : 'text-gray-700'} transition-all`}
+                          />
+                        </button>
+                      )}
+                    </div>
                   )}
                   
                   {/* Label stok habis */}

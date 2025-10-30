@@ -2,14 +2,15 @@
 
 import React, { useState, useEffect } from 'react'
 import Image from 'next/image'
-import { Pencil, LogOut, Trash } from 'lucide-react'
+import { Pencil, LogOut, Trash, Heart, ShoppingCart } from 'lucide-react'
+import Link from "next/link"
 import Navbar from '@/app/components/Navbar'
 import Footer from '@/app/components/Footer'
 import { useRouter } from 'next/navigation'
 
 export default function Profile() {
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState<'riwayat' | 'alamat'>('riwayat')
+  const [activeTab, setActiveTab] = useState<'riwayat' | 'alamat' | 'favorit'>('riwayat')
   const [isEditNameOpen, setIsEditNameOpen] = useState(false)
   const [isEditAddressOpen, setIsEditAddressOpen] = useState(false)
   const [name, setName] = useState('')
@@ -175,6 +176,16 @@ export default function Profile() {
     items?: OrderItemT[]
     complete?: number | boolean
   }
+  // Tipe minimal buku untuk tab Favorit
+  type FavBook = {
+    id: number
+    title: string
+    author?: string | null
+    price: number
+    stock?: number | null
+    cover_image?: string | null
+  }
+
   const [orders, setOrders] = useState<OrderT[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
   const [ordersError, setOrdersError] = useState<string>('')
@@ -234,6 +245,13 @@ export default function Profile() {
       fetchOrders()
     }
   }, [activeTab, userId])
+
+  // Muat favorit ketika tab "favorit" dipilih
+  useEffect(() => {
+    if (activeTab === 'favorit') {
+      fetchFavorites()
+    }
+  }, [activeTab])
 
   // Tipe dan state alamat
   interface Address {
@@ -445,10 +463,11 @@ export default function Profile() {
   const [reviewSaving, setReviewSaving] = useState(false)
   const [reviewRating, setReviewRating] = useState<number>(0)
   const [reviewComment, setReviewComment] = useState<string>('')
-  const [selectedReview, setSelectedReview] = useState<{ orderId: number; itemId: number; bookId: number } | null>(null)
+  const [selectedReview, setSelectedReview] = useState<{ orderId: number; itemId: number; bookId: number; reviewId?: number | null } | null>(null)
+  const [reviewLoading, setReviewLoading] = useState(false)
 
   function openReviewModal(orderId: number, itemId: number, bookId: number) {
-    setSelectedReview({ orderId, itemId, bookId })
+    setSelectedReview({ orderId, itemId, bookId, reviewId: null })
     setReviewRating(0)
     setReviewComment('')
     setReviewModalOpen(true)
@@ -460,48 +479,95 @@ export default function Profile() {
     setReviewComment('')
   }
 
+  // Buka modal edit review: fetch review user untuk buku tsb lalu prefill
+  async function openEditReview(orderId: number, itemId: number, bookId: number) {
+    const token = localStorage.getItem('authToken') || ''
+    setReviewLoading(true)
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/api/reviews?user_id=${userId}&book_id=${bookId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.ok) {
+        const rev = await res.json()
+        setSelectedReview({ orderId, itemId, bookId, reviewId: rev?.id ?? null })
+        setReviewRating(Number(rev?.rating ?? 0))
+        setReviewComment(String(rev?.comment ?? ''))
+        setReviewModalOpen(true)
+      } else {
+        // fallback: buka modal tanpa prefill jika tidak ada
+        setSelectedReview({ orderId, itemId, bookId, reviewId: null })
+        setReviewRating(0)
+        setReviewComment('')
+        setReviewModalOpen(true)
+      }
+    } catch {
+      // fallback open kosong
+      setSelectedReview({ orderId, itemId, bookId, reviewId: null })
+      setReviewRating(0)
+      setReviewComment('')
+      setReviewModalOpen(true)
+    } finally {
+      setReviewLoading(false)
+    }
+  }
+
   async function submitReview() {
     if (!selectedReview || !userId || reviewRating < 1) return
     const token = localStorage.getItem('authToken') || ''
     setReviewSaving(true)
     try {
-      // 1) Simpan review
-      await fetch('http://127.0.0.1:8000/api/reviews', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          user_id: userId,
-          book_id: selectedReview.bookId,
-          rating: reviewRating,
-          comment: reviewComment || null,
-        }),
-      })
-      // 2) Tandai item sudah direview
-      await fetch(`http://127.0.0.1:8000/api/order-items/${selectedReview.itemId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ is_review: 1 }),
-      })
-      // 3) Update UI lokal
-      setOrders(prev => prev.map(o => {
-        if (o.id !== selectedReview.orderId) return o
-        return {
-          ...o,
-          items: (o.items || []).map(it => it.id === selectedReview.itemId ? { ...it, /* @ts-ignore */ is_review: 1 } : it)
-        }
-      }))
-      closeReviewModal()
-    } catch {
-      // optional: tampilkan error
-    } finally {
-      setReviewSaving(false)
-    }
+      if (selectedReview.reviewId) {
+        // Edit review
+        await fetch(`http://127.0.0.1:8000/api/reviews/${selectedReview.reviewId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            rating: reviewRating,
+            comment: reviewComment || null,
+          }),
+        })
+      } else {
+        // Buat review baru
+        await fetch('http://127.0.0.1:8000/api/reviews', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            user_id: userId,
+            book_id: selectedReview.bookId,
+            rating: reviewRating,
+            comment: reviewComment || null,
+          }),
+        })
+        // Tandai item sudah direview
+        await fetch(`http://127.0.0.1:8000/api/order-items/${selectedReview.itemId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ is_review: 1 }),
+        })
+      }
+       // 3) Update UI lokal
+       setOrders(prev => prev.map(o => {
+         if (o.id !== selectedReview.orderId) return o
+         return {
+           ...o,
+           items: (o.items || []).map(it => it.id === selectedReview.itemId ? { ...it, /* @ts-ignore */ is_review: 1 } : it)
+         }
+       }))
+       closeReviewModal()
+     } catch {
+       // optional: tampilkan error
+     } finally {
+       setReviewSaving(false)
+     }
   }
 
   // Konfirmasi pesanan diterima (set complete = 1)
@@ -527,9 +593,92 @@ export default function Profile() {
     }
   }
 
+  // Ambil semua buku favorit milik user login
+  async function fetchFavorites() {
+    const token = localStorage.getItem('authToken') || ''
+    if (!token) return
+    setFavLoading(true)
+    setFavError('')
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/favorits', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) {
+        setFavBooks([])
+        setFavError('Gagal memuat favorit')
+        return
+      }
+      const items = await res.json()
+      const books: FavBook[] = (Array.isArray(items) ? items : [])
+        .map((it: any) => it?.book)
+        .filter((b: any) => !!b)
+      setFavBooks(books)
+    } catch {
+      setFavBooks([])
+      setFavError('Gagal memuat favorit')
+    } finally {
+      setFavLoading(false)
+    }
+  }
+
+  // Hapus dari favorit berdasarkan bookId, lalu perbarui UI lokal
+  async function toggleFavorite(bookId: number) {
+    const token = localStorage.getItem('authToken') || ''
+    if (!token) return
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/api/favorits/by-book/${bookId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.ok) {
+        setFavBooks(prev => prev.filter(b => Number(b.id) !== Number(bookId)))
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Tambah ke cart dari grid Favorit
+  async function handleFavCartClick(bookId: number) {
+    const token = localStorage.getItem('authToken') || ''
+    if (!token) return
+    setCartAdding(true)
+    try {
+      await fetch('http://127.0.0.1:8000/api/cart/add-item', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ book_id: bookId, quantity: 1 }),
+      })
+      setCartSuccessMsg('Berhasil ditambahkan ke keranjang')
+      window.dispatchEvent(new Event('authChanged'))
+      setTimeout(() => setCartSuccessMsg(''), 2000)
+    } catch {
+      // ignore
+    } finally {
+      setCartAdding(false)
+    }
+  }
+
+  // State Favorit
+  const [favBooks, setFavBooks] = useState<FavBook[]>([])
+  const [favLoading, setFavLoading] = useState(false)
+  const [favError, setFavError] = useState<string>('')
+  const [hoveredFavId, setHoveredFavId] = useState<number | null>(null)
+  const [cartAdding, setCartAdding] = useState(false)
+  const [cartSuccessMsg, setCartSuccessMsg] = useState('')
+
   return (
     <>
       <Navbar />
+      {/* Toast sukses tambah cart (Favorit) */}
+      {cartSuccessMsg && (
+        <div className="fixed left-1/2 -translate-x-1/2 top-6 z-50">
+          <div className="bg-green-600 text-white px-6 py-2 rounded">{cartSuccessMsg}</div>
+        </div>
+      )}
       {uploadError && (
         <div className="fixed left-1/2 transform -translate-x-1/2 top-4 z-50">
           <div className="bg-red-600 text-white text-sm font-semibold py-3 px-4 rounded-lg shadow-md">
@@ -637,116 +786,202 @@ export default function Profile() {
 
         {/* Navigasi Tabs */}
         <div className="flex space-x-10 border-b border-gray-300 mb-6">
-            <button
-            className={`pb-2 font-medium ${
-                activeTab === 'riwayat'
-                ? 'border-b-2 border-black text-black'
-                : 'text-gray-500 hover:text-black'
-            }`}
+          <button
+            className={`pb-2 font-medium ${activeTab === 'riwayat' ? 'border-b-2 border-black text-black' : 'text-gray-500 hover:text-black'}`}
             onClick={() => setActiveTab('riwayat')}
-            >
+          >
             Riwayat Pesanan
-            </button>
-            <button
-            className={`pb-2 font-medium ${
-                activeTab === 'alamat'
-                ? 'border-b-2 border-black text-black'
-                : 'text-gray-500 hover:text-black'
-            }`}
+          </button>
+          <button
+            className={`pb-2 font-medium ${activeTab === 'favorit' ? 'border-b-2 border-black text-black' : 'text-gray-500 hover:text-black'}`}
+            onClick={() => setActiveTab('favorit')}
+          >
+            Favorit
+          </button>
+          <button
+            className={`pb-2 font-medium ${activeTab === 'alamat' ? 'border-b-2 border-black text-black' : 'text-gray-500 hover:text-black'}`}
             onClick={() => setActiveTab('alamat')}
-            >
+          >
             Alamat Pengguna
-            </button>
+          </button>
         </div>
 
         {/* Konten Tab */}
         <div className="w-full max-w-2xl">
-            {activeTab === 'riwayat' ? (
-          <div className="space-y-6 max-h-[460px] overflow-y-auto pr-2" style={{ scrollbarWidth: 'thin' }}>
-             {ordersLoading ? (
-               <div className="text-sm text-gray-500">Memuat riwayat pesanan...</div>
-             ) : ordersError ? (
-               <div className="text-sm text-red-600">{ordersError}</div>
-             ) : orders.length === 0 ? (
-               <div className="text-sm text-gray-500">Belum ada pesanan.</div>
-             ) : (
-               orders.map((order) => (
-                 <div key={order.id} className="bg-white p-4 rounded-xl shadow-md border">
-                   <p className="text-sm text-black mb-3">
-                     Tanggal Belanja:{' '}
-                     <span className="font-medium text-black">{formatIdDate(order.created_at)}</span>
-                   </p>
-                   <div className="space-y-3">
-                     {(order.items || []).map((it) => {
-                       const img = it.book?.cover_image
-                         ? `http://127.0.0.1:8000/storage/${it.book.cover_image}`
-                         : '/images/dummyImage.jpg'
-                       const title = it.book?.title || `#${it.book_id}`
-                       const author = it.book?.author || ''
-                       const alreadyReviewed = (it as any)?.is_review === 1 || (it as any)?.is_review === true
-                        return (
-                         <div key={it.id} className="flex items-center gap-4">
-                           <div className="relative w-16 h-16 rounded-lg overflow-hidden border">
-                             <Image src={img} alt={title} fill className="object-cover" />
-                           </div>
-                           <div className="flex-1">
-                             <p className="font-medium text-black">{title}</p>
-                             {author ? <p className="text-xs text-gray-500">by {author}</p> : null}
-                             <p className="text-black text-sm">
-                               Rp {Number(it.price).toLocaleString('id-ID')} × {it.quantity}
-                             </p>
-                           </div>
-                           <div className="flex items-center gap-3">
-                             <p className="font-semibold text-black">
-                               Rp {(Number(it.price) * Number(it.quantity)).toLocaleString('id-ID')}
-                             </p>
-                             {order.status === 'selesai' && (
-                               alreadyReviewed ? (
-                                 <button
-                                   className="px-3 py-1 border border-green-600 text-green-600 rounded-md text-xs cursor-not-allowed opacity-60"
-                                   disabled
-                                 >
-                                   Sudah Direview
-                                 </button>
-                               ) : (
-                                 <button
-                                   onClick={() => openReviewModal(order.id, it.id, it.book_id)}
-                                   className="px-3 py-1 border border-green-600 text-green-600 rounded-md text-xs hover:bg-green-50"
-                                 >
-                                   Kasih Review
-                                 </button>
-                               )
-                             )}
-                          </div>
-                        </div>
-                      )})}
-                   </div>
-                   <div className="mt-4 pt-3 border-t text-sm flex items-center flex-wrap gap-2">
-                     <span className="text-gray-600">Status:</span>{' '}
-                     <span className="font-semibold text-black capitalize">{order.status}</span>
-                     {order.status === 'selesai' && (
-                       <>
-                         {order.complete ? (
-                           <span className="text-green-700">| Paket sudah diterima</span>
-                         ) : (
-                           <>
-                             <span className="text-gray-600">| Paket anda sudah sampai?</span>
-                             <button
-                               onClick={() => confirmOrderReceived(order.id)}
-                               className={`px-3 py-1 rounded-md border border-green-600 text-green-600 text-xs hover:bg-green-50`}
-                               disabled={completingOrderId === order.id}
-                             >
-                               {completingOrderId === order.id ? 'Menyimpan...' : 'Sudah'}
-                             </button>
-                           </>
-                         )}
-                       </>
-                     )}
+         {activeTab === 'riwayat' ? (
+  <div className="space-y-6 max-h-[460px] overflow-y-auto pr-2" style={{ scrollbarWidth: 'thin' }}>
+    {ordersLoading ? (
+      <div className="text-sm text-gray-500">Memuat riwayat pesanan...</div>
+    ) : ordersError ? (
+      <div className="text-sm text-red-600">{ordersError}</div>
+    ) : orders.length === 0 ? (
+      <div className="text-sm text-gray-500">Belum ada pesanan.</div>
+    ) : (
+      orders.map((order) => (
+        <div key={order.id} className="bg-white p-4 rounded-xl shadow-md border">
+          {/* Header: kiri = Kode Pesanan, kanan = Tanggal Belanja */}
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm text-black">
+              Kode Pesanan:{' '}
+              <span className="font-semibold text-black">{order.order_code}</span>
+            </p>
+            <p className="text-sm text-black">
+              Tanggal Belanja:{' '}
+              <span className="font-medium text-black">{formatIdDate(order.created_at)}</span>
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            {(order.items || []).map((it) => {
+              const img = it.book?.cover_image
+                ? `http://127.0.0.1:8000/storage/${it.book.cover_image}`
+                : '/images/dummyImage.jpg'
+              const title = it.book?.title || `#${it.book_id}`
+              const author = it.book?.author || ''
+              const alreadyReviewed = (it as any)?.is_review === 1 || (it as any)?.is_review === true
+
+              return (
+                <div key={it.id} className="flex items-center gap-4">
+                  <div className="relative w-16 h-16 rounded-lg overflow-hidden border">
+                    <Image src={img} alt={title} fill className="object-cover" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-black">{title}</p>
+                    {author ? <p className="text-xs text-gray-500">by {author}</p> : null}
+                    <p className="text-black text-sm">
+                      Rp {Number(it.price).toLocaleString('id-ID')} × {it.quantity}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <p className="font-semibold text-black">
+                      Rp {(Number(it.price) * Number(it.quantity)).toLocaleString('id-ID')}
+                    </p>
+                    {order.status === 'selesai' && (
+                      alreadyReviewed ? (
+                        <button
+                          onClick={() => openEditReview(order.id, it.id, it.book_id)}
+                          className="px-3 py-1 border border-green-600 text-green-600 rounded-md text-xs hover:bg-green-50"
+                        >
+                          Edit Review
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => openReviewModal(order.id, it.id, it.book_id)}
+                          className="px-3 py-1 border border-green-600 text-green-600 rounded-md text-xs hover:bg-green-50"
+                        >
+                          Kasih Review
+                        </button>
+                      )
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Footer: kiri = Status (+ konfirmasi), kanan = Total */}
+          <div className="mt-4 pt-3 border-t text-sm flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center flex-wrap gap-2">
+              <span className="text-gray-600">Status:</span>
+              <span className="font-semibold text-black capitalize">{order.status}</span>
+              {order.status === 'selesai' && (
+                <>
+                  {order.complete ? (
+                    <span className="text-green-700">| Paket sudah diterima</span>
+                  ) : (
+                    <>
+                      <span className="text-gray-600">| Paket anda sudah sampai?</span>
+                      <button
+                        onClick={() => confirmOrderReceived(order.id)}
+                        className="px-3 py-1 rounded-md border border-green-600 text-green-600 text-xs hover:bg-green-50"
+                        disabled={completingOrderId === order.id}
+                      >
+                        {completingOrderId === order.id ? 'Menyimpan...' : 'Sudah'}
+                      </button>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="text-black font-semibold">
+              Total: Rp {Number(order.total_price).toLocaleString('id-ID')}
+            </div>
+          </div>
+        </div>
+      ))
+    )}
+  </div>
+) : activeTab === 'favorit' ? (
+  <div className="bg-white p-4 rounded-xl shadow-md border">
+    <h3 className="font-semibold text-lg text-black mb-4">Buku Favorit</h3>
+    {favLoading ? (
+      <div className="text-sm text-gray-500">Memuat favorit...</div>
+    ) : favError ? (
+      <div className="text-sm text-red-600">{favError}</div>
+    ) : favBooks.length === 0 ? (
+      <div className="text-sm text-gray-500">Belum ada favorit.</div>
+    ) : (
+      <div className="max-h-[520px] overflow-y-auto pr-2" style={{ scrollbarWidth: 'thin' }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {favBooks.map((b) => (
+            <Link
+              key={b.id}
+              href={`/page/detail-buku?id=${b.id}`}
+              className="flex flex-col cursor-pointer group bg-white rounded-xl border shadow-sm hover:shadow-md overflow-hidden"
+              onMouseEnter={() => setHoveredFavId(b.id)}
+              onMouseLeave={() => setHoveredFavId(null)}
+            >
+              <div className="relative w-full h-56 bg-gray-100">
+                <Image
+                  src={b.cover_image ? `http://127.0.0.1:8000/storage/${b.cover_image}` : '/images/dummyImage.jpg'}
+                  alt={b.title}
+                  fill
+                  className="object-contain p-4"
+                />
+                {hoveredFavId === b.id && (
+                  <div className="absolute top-2 right-2 flex items-center gap-2 z-10">
+                    {/* Heart: filled -> hapus favorit */}
+                    <button
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleFavorite(b.id) }}
+                      className="bg-white p-2 rounded-full shadow-lg hover:shadow-xl transition-all duration-200"
+                      title="Hapus Favorit"
+                    >
+                      <Heart size={18} className="text-red-500 fill-red-500" />
+                    </button>
+                    {(b.stock ?? 1) > 0 && (
+                      <button
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleFavCartClick(b.id) }}
+                        className="bg-white p-2 rounded-full shadow-lg hover:shadow-xl transition-all duration-200"
+                        title="Tambah ke Keranjang"
+                        disabled={cartAdding}
+                      >
+                        <ShoppingCart size={18} className="text-gray-700" />
+                      </button>
+                    )}
+                  </div>
+                )}
+                {(b.stock ?? 1) === 0 && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="bg-red-200 text-red-700 font-bold px-4 py-1 text-sm rounded-md shadow-md opacity-90">
+                      Stok Habis
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="p-3">
+                <div className="text-sm font-semibold line-clamp-2 min-h-[2.6rem] text-black">{b.title}</div>
+                {b.author ? <div className="text-xs text-gray-600 line-clamp-1 mt-1">by {b.author}</div> : null}
+                <div className="text-black font-bold mt-2">
+                  Rp {Number(b.price).toLocaleString('id-ID')}
                 </div>
               </div>
-            )))}
-          </div>
-        ) : (
+            </Link>
+          ))}
+        </div>
+      </div>
+    )}
+  </div>
+) : (
             <div className="bg-white p-6 rounded-xl shadow-md border relative">
               {/* Header alamat + tombol tambah */}
               <div className="flex justify-between items-center mb-4">
@@ -1007,7 +1242,10 @@ export default function Profile() {
         {reviewModalOpen && selectedReview && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
             <div className="bg-white rounded-xl w-[90%] max-w-md p-5 shadow-xl">
-              <h3 className="text-lg font-semibold text-black mb-3">Kasih Review</h3>
+              <h3 className="text-lg font-semibold text-black mb-3">
+                {selectedReview?.reviewId ? 'Edit Review' : 'Kasih Review'}
+              </h3>
+              {reviewLoading && <div className="text-sm text-gray-500 mb-2">Memuat review...</div>}
               <div className="flex items-center gap-2 mb-3">
                 {[1,2,3,4,5].map(star => (
                   <button
@@ -1033,7 +1271,7 @@ export default function Profile() {
                   disabled={reviewSaving || reviewRating < 1}
                   className={`px-4 py-2 rounded-md text-white ${reviewSaving || reviewRating < 1 ? 'bg-gray-400 cursor-not-allowed' : 'bg-black hover:bg-gray-900'}`}
                 >
-                  {reviewSaving ? 'Menyimpan...' : 'Kirim'}
+                  {reviewSaving ? 'Menyimpan...' : (selectedReview?.reviewId ? 'Simpan Perubahan' : 'Kirim')}
                 </button>
               </div>
             </div>

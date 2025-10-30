@@ -13,6 +13,7 @@ use App\Http\Controllers\ReviewController;
 use App\Http\Controllers\WishlistController;
 use App\Http\Controllers\BookDiscountController;
 use App\Http\Controllers\CheckoutController;
+use App\Http\Controllers\FavoritController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Mail;
@@ -43,6 +44,11 @@ Route::apiResources([
     'reviews' => ReviewController::class,
     'wishlists' => WishlistController::class,
 ]);
+
+// Favorit (auth required)
+Route::apiResource('favorits', FavoritController::class)->only(['index','store','destroy'])->middleware('auth:sanctum');
+// Hapus favorit berdasarkan book_id (lebih praktis di FE)
+Route::delete('favorits/by-book/{book}', [FavoritController::class, 'destroyByBook'])->middleware('auth:sanctum');
 
 Route::post('/contact', [UserController::class, 'contact']);
 

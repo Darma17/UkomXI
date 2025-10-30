@@ -7,7 +7,7 @@ import Footer from '@/app/components/Footer'
 import api from '../../api/api'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ShoppingCart, ChevronDown } from 'lucide-react'
+import { ShoppingCart, ChevronDown, Heart } from 'lucide-react'
 import axios from 'axios'
 
 interface Book {
@@ -47,6 +47,10 @@ export default function ProductDetail() {
   const [showLoginModal, setShowLoginModal] = useState(false)
   const [adding, setAdding] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
+
+  // Favorite state (untuk buku saat ini)
+  const [isFav, setIsFav] = useState(false)
+  const [favBusy, setFavBusy] = useState(false)
 
   // NEW: zoom state + ref for image container
   const [isZoom, setIsZoom] = useState(false)
@@ -107,6 +111,48 @@ export default function ProductDetail() {
       }
     } finally {
       setAdding(false)
+    }
+  }
+
+  // Muat status favorit untuk buku ini
+  useEffect(() => {
+    const loadFav = async () => {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null
+      if (!book || !token) { setIsFav(false); return }
+      try {
+        const res = await api.get('/favorits')
+        const list = Array.isArray(res.data) ? res.data : []
+        const found = list.some((f: any) => Number(f.book_id ?? f.book?.id) === Number(book.id))
+        setIsFav(found)
+      } catch {
+        setIsFav(false)
+      }
+    }
+    loadFav()
+    const onAuthChanged = () => loadFav()
+    window.addEventListener('authChanged', onAuthChanged)
+    return () => window.removeEventListener('authChanged', onAuthChanged)
+  }, [book])
+
+  // Toggle favorite current book
+  const toggleFavorite = async () => {
+    if (!book) return
+    const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null
+    if (!token) { setShowLoginModal(true); return }
+    if (favBusy) return
+    setFavBusy(true)
+    try {
+      if (isFav) {
+        await api.delete(`/favorits/by-book/${book.id}`)
+        setIsFav(false)
+      } else {
+        await api.post('/favorits', { book_id: book.id })
+        setIsFav(true)
+      }
+    } catch {
+      // ignore
+    } finally {
+      setFavBusy(false)
     }
   }
 
@@ -223,13 +269,13 @@ export default function ProductDetail() {
       )}
 
       {/* FEEDBACK */}
-              {addedMsg && 
-                <div className="fixed left-1/2 transform -translate-x-1/2 top-4 z-50">
-                  <div className="bg-green-500 text-white text-sm font-semibold py-3 px-4 rounded-lg shadow-md">
-                    {addedMsg}
-                  </div>
-                </div>
-              }
+      {addedMsg && 
+        <div className="fixed left-1/2 transform -translate-x-1/2 top-4 z-50">
+          <div className="bg-green-500 text-white text-sm font-semibold py-3 px-4 rounded-lg shadow-md">
+            {addedMsg}
+          </div>
+        </div>
+      }
 
       <div className="min-h-screen bg-white text-gray-900 mt-10">
         <div className="max-w-6xl mx-auto px-6 py-10 grid grid-cols-1 md:grid-cols-2 gap-10">
@@ -257,7 +303,17 @@ export default function ProductDetail() {
           {/* DETAILS */}
           <div className="flex flex-col justify-start">
             <div>
-              <h1 className="text-3xl font-semibold mb-2">{book.title}</h1>
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <h1 className="text-3xl font-semibold">{book.title}</h1>
+                <button
+                  onClick={toggleFavorite}
+                  disabled={favBusy}
+                  className="p-2 rounded-full hover:bg-gray-100 transition"
+                  title={isFav ? 'Hapus dari Favorit' : 'Tambah ke Favorit'}
+                >
+                  <Heart size={22} className={isFav ? 'text-red-500 fill-red-500' : 'text-gray-500'} />
+                </button>
+              </div>
               <p className="text-gray-500 mb-6">by {book.author}</p>
 
               <div className="flex items-center gap-3 mb-6">
@@ -284,7 +340,7 @@ export default function ProductDetail() {
                   <span className="text-black">{book.publish_year || '-'}</span>
                 </div>
                 <div className="sm:col-span-2">
-                  <span className="text-gray-500">Kategoru: </span>
+                  <span className="text-gray-500">Kategori: </span>
                   <span className="text-black">{book.category?.name || '-'}</span>
                 </div>
               </div>
@@ -312,8 +368,6 @@ export default function ProductDetail() {
                   </button>
                 </div>
               </div>
-
-              
 
               <div className="flex items-center gap-4">
                 <button
