@@ -175,6 +175,7 @@ export default function Profile() {
     created_at?: string
     items?: OrderItemT[]
     complete?: number | boolean
+    kurir?: { id: number; nama: string; harga: number } | null
   }
   // Tipe minimal buku untuk tab Favorit
   type FavBook = {
@@ -865,18 +866,34 @@ export default function Profile() {
                           Edit Review
                         </button>
                       ) : (
-                        <button
-                          onClick={() => openReviewModal(order.id, it.id, it.book_id)}
-                          className="px-3 py-1 border border-green-600 text-green-600 rounded-md text-xs hover:bg-green-50"
-                        >
-                          Kasih Review
-                        </button>
+                        // Tampilkan "Kasih Review" hanya jika pesanan sudah dikonfirmasi diterima
+                        order.complete ? (
+                          <button
+                            onClick={() => openReviewModal(order.id, it.id, it.book_id)}
+                            className="px-3 py-1 border border-green-600 text-green-600 rounded-md text-xs hover:bg-green-50"
+                          >
+                            Review
+                          </button>
+                        ) : null
                       )
                     )}
                   </div>
                 </div>
               )
             })}
+          </div>
+
+          {/* Kurir: kiri nama, kanan harga (di atas Status dan Total) */}
+          <div className="mt-3 text-sm flex items-center justify-between">
+            <div className="text-gray-600">
+              Kurir:{' '}
+              <span className="font-medium text-black">{order.kurir?.nama ?? '-'}</span>
+            </div>
+            <div className="text-black font-medium">
+              {order.kurir
+                ? `Rp ${Number(order.kurir.harga).toLocaleString('id-ID')}`
+                : 'Rp 0'}
+            </div>
           </div>
 
           {/* Footer: kiri = Status (+ konfirmasi), kanan = Total */}

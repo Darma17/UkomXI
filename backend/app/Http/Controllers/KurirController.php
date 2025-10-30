@@ -3,8 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Kurir;
-use App\Http\Requests\StoreKurirRequest;
-use App\Http\Requests\UpdateKurirRequest;
+use Illuminate\Http\Request;
 
 class KurirController extends Controller
 {
@@ -13,23 +12,21 @@ class KurirController extends Controller
      */
     public function index()
     {
-        //
-    }
-
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
-    {
-        //
+        // Ambil semua kurir
+        return response()->json(Kurir::all());
     }
 
     /**
      * Store a newly created resource in storage.
      */
-    public function store(StoreKurirRequest $request)
+    public function store(Request $request)
     {
-        //
+        $data = $request->validate([
+            'nama' => 'required|string',
+            'harga' => 'required|numeric|min:0',
+        ]);
+        $kurir = Kurir::create($data);
+        return response()->json($kurir, 201);
     }
 
     /**
@@ -37,23 +34,20 @@ class KurirController extends Controller
      */
     public function show(Kurir $kurir)
     {
-        //
-    }
-
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(Kurir $kurir)
-    {
-        //
+        return response()->json($kurir);
     }
 
     /**
      * Update the specified resource in storage.
      */
-    public function update(UpdateKurirRequest $request, Kurir $kurir)
+    public function update(Request $request, Kurir $kurir)
     {
-        //
+        $data = $request->validate([
+            'nama' => 'sometimes|string',
+            'harga' => 'sometimes|numeric|min:0',
+        ]);
+        $kurir->update($data);
+        return response()->json($kurir);
     }
 
     /**
@@ -61,6 +55,7 @@ class KurirController extends Controller
      */
     public function destroy(Kurir $kurir)
     {
-        //
+        $kurir->delete();
+        return response()->json(['message' => 'Kurir deleted']);
     }
 }

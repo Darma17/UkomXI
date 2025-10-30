@@ -14,6 +14,7 @@ use App\Http\Controllers\WishlistController;
 use App\Http\Controllers\BookDiscountController;
 use App\Http\Controllers\CheckoutController;
 use App\Http\Controllers\FavoritController;
+use App\Http\Controllers\KurirController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Mail;
@@ -89,6 +90,11 @@ Route::get('cart/count', [\App\Http\Controllers\CartController::class, 'count'])
 
 // NEW: add item to user's cart (create cart if missing)
 Route::post('cart/add-item', [CartController::class, 'addItem'])->middleware('auth:sanctum');
+
+Route::get('kurirs', [KurirController::class, 'index'])->middleware('auth:sanctum');
+Route::post('kurirs', [KurirController::class, 'store'])->middleware('auth:sanctum');
+Route::put('kurirs/{kurir}', [KurirController::class, 'update'])->middleware('auth:sanctum');
+Route::delete('kurirs/{kurir}', [KurirController::class, 'destroy'])->middleware('auth:sanctum');
 
 // NEW: checkout via Midtrans (sandbox)
 Route::post('checkout/midtrans', [CheckoutController::class, 'midtrans'])->middleware('auth:sanctum');

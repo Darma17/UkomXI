@@ -20,6 +20,7 @@ return new class extends Migration
             $table->year('publish_year');
             $table->text('description')->nullable();
             $table->decimal('price', 10, 2);
+            $table->decimal('modal_price', 10, 2)->nullable();
             $table->integer('stock');
             $table->string('cover_image')->nullable();
             $table->boolean('is_highlight')->default(false);

@@ -9,12 +9,12 @@ class OrderController extends Controller
 {
     public function index()
     {
-        return response()->json(Order::with('items.book', 'discount', 'address')->get());
+        return response()->json(Order::with('items.book', 'discount', 'address', 'kurir')->get());
     }
 
     public function show(Order $order)
     {
-        return response()->json($order->load('items.book', 'discount', 'address'));
+        return response()->json($order->load('items.book', 'discount', 'address', 'kurir'));
     }
 
     public function store(Request $request)
@@ -24,6 +24,7 @@ class OrderController extends Controller
             'discount_id' => 'nullable|exists:discounts,id',
             'total_price' => 'required|numeric',
             'address_id' => 'nullable|exists:addresses,id',
+            'kurir_id' => 'nullable|exists:kurirs,id',
         ]);
 
         $data['order_code'] = 'ORD-' . strtoupper(uniqid());
@@ -38,8 +39,9 @@ class OrderController extends Controller
             'status' => 'sometimes|in:proses,dibayar,dikemas,diantar,selesai,cancelled',
             'complete' => 'sometimes|boolean',
             'address_id' => 'sometimes|nullable|exists:addresses,id',
+            'kurir_id' => 'sometimes|nullable|exists:kurirs,id',
         ]);
         $order->update($data);
-        return response()->json($order->fresh('items.book', 'discount', 'address'));
+        return response()->json($order->fresh('items.book', 'discount', 'address', 'kurir'));
     }
 }

@@ -16,6 +16,9 @@ return new class extends Migration
             $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
             // alamat tujuan pengiriman (opsional) — tanpa FK untuk menghindari error urutan migration
             $table->foreignId('address_id')->nullable()->index();
+            // kurir pengiriman (opsional) — gunakan index saja untuk menghindari FK error jika kurirs belum ada
+            $table->foreignId('kurir_id')->nullable()->index();
+
             $table->string('order_code')->unique();
             $table->foreignId('discount_id')->nullable()->constrained('discounts')->nullOnDelete();
             $table->decimal('total_price', 10, 2);

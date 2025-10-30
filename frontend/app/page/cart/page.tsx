@@ -38,6 +38,12 @@ export default function Cart() {
   const [addrLoading, setAddrLoading] = useState(false)
   const [selectedAddress, setSelectedAddress] = useState<Address | null>(null)
 
+  // Kurir (shipping)
+  type Kurir = { id: number; nama: string; harga: number }
+  const [kurirs, setKurirs] = useState<Kurir[]>([])
+  const [selectedKurir, setSelectedKurir] = useState<Kurir | null>(null)
+  const [kurirLoading, setKurirLoading] = useState(false)
+
   // sample fallback (used if not authenticated)
   const sampleFallback = [
     {
@@ -131,12 +137,30 @@ export default function Cart() {
     }
 
     load()
+    // load kurir list
+    async function loadKurirs() {
+      setKurirLoading(true)
+      try {
+        const res = await api.get('/kurirs')
+        const list: Kurir[] = Array.isArray(res.data) ? res.data : []
+        setKurirs(list)
+        // optionally pilih pertama
+        if (list.length > 0) setSelectedKurir(prev => prev ?? list[0])
+      } catch {
+        setKurirs([])
+      } finally {
+        setKurirLoading(false)
+      }
+    }
+    loadKurirs()
     return () => { mounted = false }
   }, [])
 
   // calculate subtotal client-side as fallback if cartTotal not provided
   const localTotal = cartItems.reduce((s, it) => s + (Number(it.price || 0) * Number(it.quantity || 0)), 0)
   const displayedTotal = cartTotal !== null ? cartTotal : localTotal
+  const shippingFee = Number(selectedKurir?.harga ?? 0)
+  const grandTotal = Number(displayedTotal || 0) + shippingFee
 
   // update quantity (calls backend when possible)
   const handleQuantityChange = async (cartItemIdOrIndex: number | null, newQty: number, itemIdx: number) => {
@@ -271,6 +295,10 @@ export default function Cart() {
        setCheckoutError('Pilih alamat tujuan terlebih dahulu.')
        return
      }
+     if (!selectedKurir) {
+       setCheckoutError('Pilih kurir pengiriman terlebih dahulu.')
+       return
+     }
      // prevent double submit
      if (checkoutProcessing) return
 
@@ -286,8 +314,9 @@ export default function Cart() {
            price: it.price,
            quantity: it.quantity,
          })),
-         total: displayedTotal,
+         total: displayedTotal, // subtotal produk (ongkir dihitung di backend dari kurir_id)
          shipping_address: selectedAddress, // opsional: kirim ke backend
+         kurir_id: selectedKurir.id,
        }
        const res = await api.post('/checkout/midtrans', payload)
        const data = res.data || {}
@@ -349,19 +378,19 @@ export default function Cart() {
            onSuccess: async function (result: any) {
              console.log('Midtrans success', result)
              try {
-               // send order creation request to backend (authenticated)
                const payload = {
                  items: cartItems.map(it => ({
                    book_id: it.book_id,
                    quantity: it.quantity,
                    price: it.price
                  })),
-                 total: displayedTotal,
+                 total: displayedTotal, // backend akan menambahkan ongkir dari kurir_id
                  midtrans_result: result,
                  midtrans_order_id: result?.order_id || result?.transaction_details?.order_id || null,
-                // kirim alamat yang dipilih user
-                address_id: selectedAddress?.id ?? null,
-                shipping_address: selectedAddress ?? null,
+                 // kirim alamat yang dipilih user
+                 address_id: selectedAddress?.id ?? null,
+                 shipping_address: selectedAddress ?? null,
+                 kurir_id: selectedKurir.id,
                }
                await api.post('/checkout/complete', payload)
                // notify navbar and redirect to success page
@@ -384,8 +413,9 @@ export default function Cart() {
                  total: displayedTotal,
                  midtrans_result: result,
                  midtrans_order_id: result?.order_id || result?.transaction_details?.order_id || null,
-                address_id: selectedAddress?.id ?? null,
-                shipping_address: selectedAddress ?? null,
+                 address_id: selectedAddress?.id ?? null,
+                 shipping_address: selectedAddress ?? null,
+                 kurir_id: selectedKurir.id,
                }
                await api.post('/checkout/complete', payload)
                window.dispatchEvent(new Event('authChanged'))
@@ -577,9 +607,42 @@ export default function Cart() {
                   </div>
                 ))}
               </div>
-              <div className="border-t border-gray-200 pt-4 flex justify-between font-semibold">
-                <span>Total</span>
-                <span>Rp {Number(displayedTotal || 0).toLocaleString('id-ID')}</span>
+
+             {/* Pilih Kurir */}
+             <div className="mb-4">
+               <label className="block text-sm font-medium text-gray-800 mb-2">Pilih Kurir</label>
+               <select
+                 value={selectedKurir?.id ?? ''}
+                 onChange={(e) => {
+                   const id = Number(e.target.value || 0)
+                   const k = kurirs.find(x => Number(x.id) === id) || null
+                   setSelectedKurir(k)
+                   setCheckoutError(null)
+                 }}
+                 className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+               >
+                 <option value="">{kurirLoading ? 'Memuat kurir...' : 'Pilih Kurir'}</option>
+                 {kurirs.map(k => (
+                   <option key={k.id} value={k.id}>
+                     {k.nama} — Rp {Number(k.harga).toLocaleString('id-ID')}
+                   </option>
+                 ))}
+               </select>
+             </div>
+
+              <div className="space-y-2 border-t border-gray-200 pt-4 text-sm">
+                <div className="flex justify-between">
+                  <span>Subtotal</span>
+                  <span>Rp {Number(displayedTotal || 0).toLocaleString('id-ID')}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Ongkir</span>
+                  <span>Rp {shippingFee.toLocaleString('id-ID')}</span>
+                </div>
+                <div className="flex justify-between font-semibold text-base pt-1">
+                  <span>Total</span>
+                  <span>Rp {grandTotal.toLocaleString('id-ID')}</span>
+                </div>
               </div>
               <div>
                 {checkoutError && (
@@ -587,9 +650,9 @@ export default function Cart() {
                 )}
                 <button
                   onClick={handleCheckout}
-                  disabled={!cartItems.length || checkoutProcessing || !selectedAddress}
+                  disabled={!cartItems.length || checkoutProcessing || !selectedAddress || !selectedKurir}
                   className={`w-full mt-6 py-3 rounded-md font-semibold transition ${
-                    !cartItems.length || checkoutProcessing || !selectedAddress
+                    !cartItems.length || checkoutProcessing || !selectedAddress || !selectedKurir
                       ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
                       : 'bg-black text-white hover:bg-gray-900'
                   }`}

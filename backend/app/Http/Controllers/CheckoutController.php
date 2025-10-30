@@ -12,6 +12,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Cart;
 use App\Models\CartItem;
+use App\Models\Kurir;
 
 class CheckoutController extends Controller
 {
@@ -42,6 +43,7 @@ class CheckoutController extends Controller
             'total' => 'required|numeric|min:0',
             'address_id' => 'nullable|exists:addresses,id',
             'shipping_address' => 'nullable|array',
+            'kurir_id' => 'nullable|exists:kurirs,id',
         ]);
 
         // Normalisasi address_id dari shipping_address jika dikirim sebagai objek
@@ -62,11 +64,28 @@ class CheckoutController extends Controller
                 'name' => mb_substr($it['title'], 0, 250)
             ];
         }
+        // Hitung ongkir dari kurir_id (jika ada) dan tambahkan sebagai item_details
+        $shipping = 0.0;
+        $kurirId = $request->input('kurir_id');
+        $kurir = null;
+        if ($kurirId) {
+            $kurir = Kurir::find($kurirId);
+            if ($kurir) {
+                $shipping = (float) $kurir->harga;
+                $itemDetails[] = [
+                    'id' => 'SHIPPING-' . $kurir->id,
+                    'price' => $shipping,
+                    'quantity' => 1,
+                    'name' => 'Ongkos Kirim - ' . $kurir->nama,
+                ];
+            }
+        }
+        $grossAmount = (float)$data['total'] + $shipping;
 
         $transaction = [
             'transaction_details' => [
                 'order_id' => $orderId,
-                'gross_amount' => (float)$data['total'],
+                'gross_amount' => $grossAmount,
             ],
             'item_details' => $itemDetails,
             // optional: customer_details can be added
@@ -129,8 +148,9 @@ class CheckoutController extends Controller
                     'payload' => json_encode([
                         'items' => $data['items'],
                         'address_id' => $addressId,
+                        'kurir_id' => $kurir?->id,
                     ]),
-                    'total' => $data['total'],
+                    'total' => $grossAmount,
                 ]);
             } catch (\Throwable $e) {
                 Log::error('Failed to persist pending payment', ['err' => $e->getMessage(), 'user_id' => $user->id, 'order_id' => $orderId]);
@@ -200,15 +220,17 @@ class CheckoutController extends Controller
             $decoded = json_decode($pending->payload, true) ?: [];
             $items = $decoded['items'] ?? [];
             $addressId = $decoded['address_id'] ?? null;
+            $kurirId = $decoded['kurir_id'] ?? null;
 
             // create order: status dibayar, address_id terisi, complete=0
             $order = Order::create([
                 'user_id'     => $pending->user_id,
                 'order_code'  => 'ORD-' . strtoupper(Str::random(8)),
                 'discount_id' => null,
-                'total_price' => $pending->total,
+                'total_price' => $pending->total, // sudah termasuk ongkir dari midtrans()
                 'status'      => 'dibayar',
                 'address_id'  => $addressId,
+                'kurir_id'    => $kurirId,
                 'complete'    => 0,
             ]);
 
@@ -262,7 +284,8 @@ class CheckoutController extends Controller
             'items.*.price' => 'required|numeric',
             'total' => 'required|numeric|min:0',
             'address_id' => 'nullable|exists:addresses,id',
-            'shipping_address' => 'nullable|array', // boleh kirim objek alamat dari FE
+            'shipping_address' => 'nullable|array',
+            'kurir_id' => 'nullable|exists:kurirs,id',
         ]);
 
         // Ambil address_id dari shipping_address.id jika ada
@@ -270,17 +293,28 @@ class CheckoutController extends Controller
         if (!$addressId && !empty($data['shipping_address']) && is_array($data['shipping_address'])) {
             $addressId = $data['shipping_address']['id'] ?? null;
         }
+        // Hitung ongkir dari kurir_id
+        $shipping = 0.0;
+        $kurirId = $data['kurir_id'] ?? null;
+        if ($kurirId) {
+            $kurir = Kurir::find($kurirId);
+            if ($kurir) {
+                $shipping = (float) $kurir->harga;
+            }
+        }
+        $grandTotal = (float)$data['total'] + $shipping;
 
         $order = null;
 
-        DB::transaction(function () use (&$order, $user, $data, $addressId) {
+        DB::transaction(function () use (&$order, $user, $data, $addressId, $grandTotal, $kurirId) {
             $order = Order::create([
                 'user_id'     => $user->id,
                 'order_code'  => 'ORD-' . strtoupper(Str::random(10)),
                 'discount_id' => null,
-                'total_price' => $data['total'],
+                'total_price' => $grandTotal,
                 'status'      => 'dibayar',
                 'address_id'  => $addressId,
+                'kurir_id'    => $kurirId,
                 'complete'    => 0,
             ]);
 
@@ -304,6 +338,6 @@ class CheckoutController extends Controller
             }
         });
 
-        return response()->json($order->load('items.book', 'address'), 201);
+        return response()->json($order->load('items.book', 'address', 'kurir'), 201);
     }
 }

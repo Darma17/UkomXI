@@ -58,6 +58,7 @@ class BookController extends Controller
             'publish_year' => 'required|digits:4|integer',
             'description' => 'nullable|string',
             'price' => 'required|numeric',
+            'modal_price' => 'nullable|numeric',
             'stock' => 'required|integer',
             'cover_image' => 'nullable|image|mimes:jpg,jpeg,png|max:2048', // ubah ke file image
         ]);
