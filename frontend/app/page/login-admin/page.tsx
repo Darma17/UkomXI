@@ -31,9 +31,8 @@ export default function SignIn() {
         setErrorMsg(data.message || 'Gagal masuk admin')
         return
       }
-      // simpan token admin dan arahkan ke dashboard admin
-      localStorage.setItem('adminToken', data.token)
-      router.push('/page/admin/dashboard')
+      // Backend hanya mengirim OTP -> arahkan ke verifikasi OTP untuk admin
+      router.push(`/page/otp?email=${encodeURIComponent(email)}&purpose=admin`)
     } catch {
       setErrorMsg('Network error, coba lagi')
     } finally {

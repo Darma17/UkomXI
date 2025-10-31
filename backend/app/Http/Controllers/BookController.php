@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Book;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class BookController extends Controller
 {
@@ -51,38 +53,104 @@ class BookController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate([
-            'category_id' => 'required|exists:categories,id',
-            'title' => 'required|string',
-            'author' => 'required|string',
-            'publisher' => 'required|string',
-            'publish_year' => 'required|digits:4|integer',
-            'description' => 'nullable|string',
-            'price' => 'required|numeric',
-            'modal_price' => 'nullable|numeric',
-            'stock' => 'required|integer',
-            'cover_image' => 'nullable|image|mimes:jpg,jpeg,png|max:2048', // ubah ke file image
+            'category_id'   => 'required|exists:categories,id',
+            'title'         => 'required|string',
+            'author'        => 'required|string',
+            'publisher'     => 'required|string',
+            'publish_year'  => 'required|digits:4|integer',
+            'description'   => 'nullable|string',
+            'price'         => 'required|numeric',
+            'modal_price'   => 'nullable|numeric',
+            'stock'         => 'required|integer',
+            'is_highlight'  => 'sometimes|boolean',
+            // jangan pakai image/mimes (butuh fileinfo). Pakai file saja lalu cek ekstensi manual.
+            'cover_image'   => 'nullable|file|max:5120',
         ]);
 
-        // Upload gambar jika ada
-        if ($request->hasFile('cover_image')) {
-            $path = $request->file('cover_image')->store('covers', 'public'); 
-            // hasil path misal: covers/namafile.jpg
-            $data['cover_image'] = $path;
+        try {
+            if ($request->hasFile('cover_image')) {
+                $file = $request->file('cover_image');
+                if (! $file->isValid()) {
+                    return response()->json(['message' => 'File upload tidak valid'], 422);
+                }
+                $orig = (string) $file->getClientOriginalName();
+                $ext  = strtolower(pathinfo($orig, PATHINFO_EXTENSION));
+                $allowed = ['jpg','jpeg','png','webp'];
+                if (!in_array($ext, $allowed, true)) {
+                    return response()->json(['message' => 'Ekstensi tidak didukung. Izinkan: jpg, jpeg, png, webp'], 422);
+                }
+                $dest = storage_path('app/public/covers');
+                if (!is_dir($dest)) { @mkdir($dest, 0775, true); }
+                $filename = 'b'.time().'_'.Str::random(6).'.'.$ext;
+                $file->move($dest, $filename);
+                $abs = $dest.DIRECTORY_SEPARATOR.$filename;
+                if (!is_file($abs)) {
+                    Log::error('Gagal menyimpan cover_image', ['path' => $abs]);
+                    return response()->json(['message' => 'Gagal menyimpan file gambar'], 500);
+                }
+                $data['cover_image'] = 'covers/'.$filename; // simpan relatif untuk diakses lewat /storage/...
+            }
+
+            $book = Book::create($data);
+            return response()->json($book, 201);
+        } catch (\Throwable $e) {
+            Log::error('Book store failed', ['err' => $e->getMessage()]);
+            return response()->json(['message' => 'Gagal menambah produk'], 500);
         }
-
-        $book = Book::create($data);
-
-        // kembalikan full URL supaya bisa langsung diakses di React
-        $book->cover_image = $book->cover_image ? asset('storage/' . $book->cover_image) : null;
-
-        return response()->json($book, 201);
     }
-
 
     public function update(Request $request, Book $book)
     {
-        $book->update($request->all());
-        return response()->json($book);
+        $data = $request->validate([
+            'category_id'   => 'sometimes|exists:categories,id',
+            'title'         => 'sometimes|string',
+            'author'        => 'sometimes|string',
+            'publisher'     => 'sometimes|string',
+            'publish_year'  => 'sometimes|digits:4|integer',
+            'description'   => 'sometimes|nullable|string',
+            'price'         => 'sometimes|numeric',
+            'modal_price'   => 'sometimes|nullable|numeric',
+            'stock'         => 'sometimes|integer',
+            'is_highlight'  => 'sometimes|boolean',
+            'cover_image'   => 'nullable|file|max:5120',
+        ]);
+
+        try {
+            // handle ganti gambar jika ada file
+            if ($request->hasFile('cover_image')) {
+                $file = $request->file('cover_image');
+                if (! $file->isValid()) {
+                    return response()->json(['message' => 'File upload tidak valid'], 422);
+                }
+                $orig = (string) $file->getClientOriginalName();
+                $ext  = strtolower(pathinfo($orig, PATHINFO_EXTENSION));
+                $allowed = ['jpg','jpeg','png','webp'];
+                if (!in_array($ext, $allowed, true)) {
+                    return response()->json(['message' => 'Ekstensi tidak didukung. Izinkan: jpg, jpeg, png, webp'], 422);
+                }
+                $dest = storage_path('app/public/covers');
+                if (!is_dir($dest)) { @mkdir($dest, 0775, true); }
+                $filename = 'b'.time().'_'.Str::random(6).'.'.$ext;
+                $file->move($dest, $filename);
+                $abs = $dest.DIRECTORY_SEPARATOR.$filename;
+                if (!is_file($abs)) {
+                    Log::error('Gagal menyimpan cover_image (update)', ['path' => $abs]);
+                    return response()->json(['message' => 'Gagal menyimpan file gambar'], 500);
+                }
+                // hapus file lama jika ada
+                if (!empty($book->cover_image)) {
+                    $old = storage_path('app/public/'.ltrim($book->cover_image, '/'));
+                    if (is_file($old)) { @unlink($old); }
+                }
+                $data['cover_image'] = 'covers/'.$filename;
+            }
+
+            $book->update($data);
+            return response()->json($book);
+        } catch (\Throwable $e) {
+            Log::error('Book update failed', ['book_id' => $book->id, 'err' => $e->getMessage()]);
+            return response()->json(['message' => 'Gagal memperbarui produk'], 500);
+        }
     }
 
     public function destroy(Book $book)

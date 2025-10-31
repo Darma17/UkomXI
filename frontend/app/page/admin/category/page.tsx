@@ -1,7 +1,5 @@
 "use client";
 import React, { useState, ChangeEvent, useEffect } from "react";
-import { FaPlus, FaEdit, FaTrash } from "react-icons/fa";
-import { FaPencil } from "react-icons/fa6";
 import { Pencil, Trash2, Plus } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
@@ -15,6 +13,8 @@ interface FormError {
   name?: string;
   description?: string;
 }
+
+type CategoryRow = { id: number; name: string; description: string }
 
 export default function Category() {
   const router = useRouter()
@@ -31,15 +31,11 @@ export default function Category() {
       .catch(() => router.replace('/page/login-admin'))
       .finally(() => setChecked(true))
   }, [router])
-  if (!checked || !allow) return null
 
-  const [categories, setCategories] = useState<CategoryData[]>(
-    [
-      { name: "Elektronik", description: "Produk gadget dan alat elektronik" },
-      { name: "Fashion", description: "Pakaian dan aksesoris terkini" },
-      { name: "Makanan", description: "Makanan ringan dan berat" },
-    ]
-  );
+  const [categories, setCategories] = useState<CategoryRow[]>([])
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [errorMsg, setErrorMsg] = useState('')
 
   const [showModal, setShowModal] = useState<boolean>(false);
   const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
@@ -50,6 +46,23 @@ export default function Category() {
   const [formError, setFormError] = useState<FormError>({});
   const [editIndex, setEditIndex] = useState<number | null>(null);
   const [deleteIndex, setDeleteIndex] = useState<number | null>(null);
+
+  async function loadCategories() {
+    setLoading(true)
+    try {
+      const token = localStorage.getItem('authToken') || localStorage.getItem('adminToken') || ''
+      const res = await fetch('http://127.0.0.1:8000/api/categories', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      })
+      const data = await res.json().catch(() => [])
+      setCategories(Array.isArray(data) ? data : [])
+    } catch {
+      setCategories([])
+    } finally {
+      setLoading(false)
+    }
+  }
+  useEffect(() => { if (allow) loadCategories() }, [allow])
 
   // ✅ Buka modal tambah/edit
   const handleOpenModal = (item?: CategoryData, index?: number) => {
@@ -77,24 +90,41 @@ export default function Category() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // ✅ Simpan data baru / edit
-  const handleSave = () => {
+  // ✅ Simpan (POST/PUT ke backend)
+  const handleSave = async () => {
     const errors: FormError = {};
     if (!formData.name) errors.name = "Nama kategori wajib diisi";
     if (!formData.description) errors.description = "Deskripsi wajib diisi";
     setFormError(errors);
-
     if (Object.keys(errors).length > 0) return;
 
-    if (editIndex !== null) {
-      const updated = [...categories];
-      updated[editIndex] = formData;
-      setCategories(updated);
-    } else {
-      setCategories([...categories, formData]);
+    setSaving(true)
+    try {
+      const token = localStorage.getItem('authToken') || localStorage.getItem('adminToken') || ''
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      }
+      if (editIndex !== null) {
+        const id = categories[editIndex]?.id
+        const res = await fetch(`http://127.0.0.1:8000/api/categories/${id}`, {
+          method: 'PUT', headers, body: JSON.stringify(formData)
+        })
+        if (!res.ok) throw new Error('Gagal memperbarui kategori')
+      } else {
+        const res = await fetch('http://127.0.0.1:8000/api/categories', {
+          method: 'POST', headers, body: JSON.stringify(formData)
+        })
+        if (!res.ok) throw new Error('Gagal menambah kategori')
+      }
+      await loadCategories()
+      setShowModal(false)
+    } catch (e: any) {
+      setErrorMsg(e?.message || 'Gagal menyimpan kategori')
+      setTimeout(() => setErrorMsg(''), 2500)
+    } finally {
+      setSaving(false)
     }
-
-    setShowModal(false);
   };
 
   // ✅ Hapus data
@@ -103,12 +133,27 @@ export default function Category() {
     setShowDeleteModal(true);
   };
 
-  const confirmDelete = () => {
-    if (deleteIndex !== null) {
-      setCategories(categories.filter((_, i) => i !== deleteIndex));
+  const confirmDelete = async () => {
+    if (deleteIndex === null) { setShowDeleteModal(false); return }
+    try {
+      const id = categories[deleteIndex]?.id
+      const token = localStorage.getItem('authToken') || localStorage.getItem('adminToken') || ''
+      const res = await fetch(`http://127.0.0.1:8000/api/categories/${id}`, {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      })
+      if (!res.ok) throw new Error('Gagal menghapus kategori')
+      setCategories(prev => prev.filter((_, i) => i !== deleteIndex))
+    } catch (e: any) {
+      setErrorMsg(e?.message || 'Gagal menghapus kategori')
+      setTimeout(() => setErrorMsg(''), 2500)
+    } finally {
+      setShowDeleteModal(false)
     }
-    setShowDeleteModal(false);
-  };
+  }
+
+  // Early return setelah semua hooks terdefinisi
+  if (!checked || !allow) return null
 
   return (
     <div className="text-black pl-15">
@@ -128,53 +173,58 @@ export default function Category() {
         </button>
       </div>
 
-      {/* Tabel */}
-      <div className="overflow-x-auto pt-10">
-        <table className="min-w-full border border-gray-100 rounded-lg overflow-hidden">
-          <thead className="bg-gray-200 text-left">
-            <tr>
-              <th className="p-3 border-b">No</th>
-              <th className="p-3 border-b">Nama</th>
-              <th className="p-3 border-b">Deskripsi</th>
-              <th className="p-3 border-b text-center">Aksi</th>
+      {errorMsg && <div className="mt-4 px-4 py-2 bg-red-100 text-red-700 rounded">{errorMsg}</div>}
+
+      {/* Tabel (desain mengikuti halaman Product) */}
+      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm mt-10">
+        <table className="min-w-full text-sm">
+          <thead className="sticky top-0 z-10 bg-gray-50/90 backdrop-blur supports-[backdrop-filter]:bg-gray-50/60">
+            <tr className="text-xs uppercase tracking-wide text-gray-600">
+              <th className="p-3 text-left w-12">No</th>
+              <th className="p-3 text-left min-w-[220px]">Nama</th>
+              <th className="p-3 text-left">Deskripsi</th>
+              <th className="p-3 text-center w-28">Aksi</th>
             </tr>
           </thead>
           <tbody>
             {categories.map((cat, index) => (
-              <tr key={index} className="border-b last:border-none bg-gray-50 hover:bg-gray-100 transition-colors">
-                <td className="p-3">{index + 1}</td>
-                <td className="p-3">{cat.name}</td>
-                <td className="p-3">{cat.description}</td>
-                <td className="p-3 text-center space-x-3">
-                  <button
-                    onClick={() => handleOpenModal(cat, index)}
-                    className="text-blue-600 hover:text-blue-800"
-                  >
-                    <Pencil size={16} />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(index)}
-                    className="text-red-600 hover:text-red-800"
-                  >
-                    <Trash2 size={16} />
-                  </button>
+              <tr key={cat.id} className="border-b last:border-none odd:bg-white even:bg-gray-50 hover:bg-gray-100/70 transition-colors">
+                <td className="p-3 align-middle text-gray-700">{index + 1}</td>
+                <td className="p-3 align-middle text-gray-900 font-medium">{cat.name}</td>
+                <td className="p-3 align-middle text-gray-700">{cat.description}</td>
+                <td className="p-3 align-middle">
+                  <div className="flex items-center justify-center gap-2">
+                    <button
+                      onClick={() => handleOpenModal({ name: cat.name, description: cat.description }, index)}
+                      className="p-2 rounded-md text-blue-600 hover:bg-blue-50 hover:text-blue-700 transition"
+                      title="Edit"
+                    >
+                      <Pencil size={16} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(index)}
+                      className="p-2 rounded-md text-red-600 hover:bg-red-50 hover:text-red-700 transition"
+                      title="Hapus"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
-            {categories.length === 0 && (
+            {!loading && categories.length === 0 && (
               <tr>
-                <td colSpan={4} className="text-center text-gray-500 py-4">
-                  Belum ada data kategori
-                </td>
+                <td colSpan={4} className="text-center text-gray-500 py-4">Belum ada data kategori</td>
               </tr>
             )}
           </tbody>
         </table>
+        {loading && <div className="p-4 text-sm text-gray-500">Memuat kategori...</div>}
       </div>
 
       {/* Modal Tambah/Edit */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
             <h2 className="text-lg font-semibold mb-4">
               {editIndex !== null ? "Edit Category" : "Tambah Category"}
@@ -190,9 +240,8 @@ export default function Category() {
                   name="name"
                   value={formData.name}
                   onChange={handleInputChange}
-                  className={`w-full p-2 border rounded-lg ${
-                    formError.name ? "border-red-500" : "border-gray-300"
-                  }`}
+                  className={`w-full p-2 border rounded-lg ${formError.name ? "border-red-500" : "border-gray-300"}`}
+                  placeholder="Nama"
                 />
                 {formError.name && (
                   <p className="text-red-500 text-xs mt-1">{formError.name}</p>
@@ -208,11 +257,8 @@ export default function Category() {
                   rows={3}
                   value={formData.description}
                   onChange={handleInputChange}
-                  className={`w-full p-2 border rounded-lg ${
-                    formError.description
-                      ? "border-red-500"
-                      : "border-gray-300"
-                  }`}
+                  className={`w-full p-2 border rounded-lg ${formError.description ? "border-red-500" : "border-gray-300"}`}
+                  placeholder="Deskripsi singkat"
                 />
                 {formError.description && (
                   <p className="text-red-500 text-xs mt-1">
@@ -231,9 +277,10 @@ export default function Category() {
               </button>
               <button
                 onClick={handleSave}
-                className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                disabled={saving}
+                className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
               >
-                Simpan
+                {saving ? 'Menyimpan...' : 'Simpan'}
               </button>
             </div>
           </div>
@@ -242,13 +289,13 @@ export default function Category() {
 
       {/* Modal Hapus */}
       {showDeleteModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-sm">
             <h2 className="text-lg font-semibold mb-2">Hapus Category</h2>
             <p className="text-gray-600 mb-4">
               Yakin ingin menghapus{" "}
               <span className="font-semibold text-red-600">
-                {deleteIndex !== null ? categories[deleteIndex].name : ""}
+                {deleteIndex !== null ? categories[deleteIndex]?.name : ""}
               </span>
               ?
             </p>

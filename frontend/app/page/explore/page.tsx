@@ -49,7 +49,9 @@ export default function ExplorePage() {
 
   // === Filter states ===
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
-  const [priceRange, setPriceRange] = useState({ min: 0, max: 1000000 })
+  // Filter harga hanya dipakai jika user klik tombol "Filter"
+  const [usePriceFilter, setUsePriceFilter] = useState(false)
+  const [priceRange, setPriceRange] = useState({ min: 0, max: 0 })
   const [hoveredId, setHoveredId] = useState<number | null>(null)
   const [cartClicked, setCartClicked] = useState<Record<number, boolean>>({})
   const [favoriteSet, setFavoriteSet] = useState<Set<number>>(new Set())
@@ -62,25 +64,39 @@ export default function ExplorePage() {
 
   const router = useRouter()
 
-  // Fetch books from backend using api.js
-  useEffect(() => {
+  // helper: fetch books (cache-busted)
+  const fetchBooks = async () => {
     let mounted = true
     setLoading(true)
-    api.get('/books')
-      .then((res) => {
-        if (!mounted) return
-        // backend returns array of books; adapt fields if needed
-        setAllProducts(res.data || [])
-      })
-      .catch((err) => {
-        console.error(err)
-        if (mounted) setError('Gagal memuat buku')
-      })
-      .finally(() => {
-        if (mounted) setLoading(false)
-      })
-
+    setError('')
+    try {
+      const res = await api.get(`/books?ts=${Date.now()}`)
+      if (!mounted) return
+      setAllProducts(res.data || [])
+    } catch (err) {
+      console.error(err)
+      setError('Gagal memuat buku')
+    } finally {
+      setLoading(false)
+    }
     return () => { mounted = false }
+  }
+
+  // Fetch books from backend using api.js
+  useEffect(() => {
+    fetchBooks()
+    // re-fetch ketika tab fokus atau ada event perubahan buku
+    const onFocus = () => fetchBooks()
+    const onBooksChanged = () => fetchBooks()
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('booksChanged', onBooksChanged as any)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') fetchBooks()
+    })
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('booksChanged', onBooksChanged as any)
+    }
   }, [])
 
   // Fetch categories for filter (once)
@@ -116,6 +132,16 @@ export default function ExplorePage() {
     return () => window.removeEventListener('authChanged', onAuthChanged)
   }, [])
 
+  // Jika dataset berubah, bawa kembali ke halaman 1 agar item baru tidak tersembunyi di halaman berikutnya
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [allProducts])
+
+  // Set ke halaman 1 jika filter kategori/harga atau sort berubah
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [selectedCategories, usePriceFilter, priceRange.min, priceRange.max, sortBy])
+
   // Apply filters and sorting to allProducts
   const getFilteredSortedProducts = () => {
     let list = [...allProducts]
@@ -128,11 +154,15 @@ export default function ExplorePage() {
       })
     }
 
-    // filter by price range
-    list = list.filter(book => {
-      const price = Number(book.price) || 0
-      return price >= (priceRange.min || 0) && price <= (priceRange.max || Number.MAX_SAFE_INTEGER)
-    })
+    // filter by price range -> HANYA saat user klik tombol "Filter"
+    if (usePriceFilter) {
+      const min = Number(priceRange.min) || 0
+      const max = Number(priceRange.max) || Number.MAX_SAFE_INTEGER
+      list = list.filter(book => {
+        const price = Number(book.price) || 0
+        return price >= min && price <= max
+      })
+    }
 
     // sort
     switch (sortBy) {
@@ -245,6 +275,7 @@ export default function ExplorePage() {
 
   // Apply filters action (from UI button)
   const applyFilters = () => {
+    setUsePriceFilter(true)
     setCurrentPage(1)
     setFilterOpen(false)
     // filtered list is computed on render (no extra action required)
@@ -421,6 +452,11 @@ export default function ExplorePage() {
                         value={priceRange.max}
                         onChange={(e) => setPriceRange(prev => ({ ...prev, max: Number(e.target.value) }))}
                       />
+                     {!usePriceFilter && (
+                       <p className="text-xs text-gray-500">
+                         Filter harga belum aktif. Klik tombol "Filter" untuk menerapkan.
+                       </p>
+                     )}
                     </div>
                   </div>
 
@@ -434,7 +470,8 @@ export default function ExplorePage() {
                     <button
                       onClick={() => {
                         setSelectedCategories([])
-                        setPriceRange({ min: 0, max: 1000000 })
+                        setUsePriceFilter(false)
+                        setPriceRange({ min: 0, max: 0 })
                         setCurrentPage(1)
                       }}
                       className="flex-1 border border-gray-300 text-black py-2 rounded-md hover:bg-gray-100 transition"

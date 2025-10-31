@@ -71,7 +71,7 @@ export default function OtpPage() {
 				// fallback: redirect to signin
 				router.push('/page/sigin?register=1')
 			} else {
-				// existing login verify flow
+				// login (customer atau admin)
 				const res = await fetch('http://127.0.0.1:8000/api/verify-otp', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
@@ -85,13 +85,22 @@ export default function OtpPage() {
 					return
 				}
 
-				// success -> store token and redirect
-				if (data.token) {
-					localStorage.setItem('authToken', data.token)
-					// notify navbar / other listeners immediately
-					window.dispatchEvent(new Event('authChanged'))
+				const token = data.token
+				if (!token) {
+					setErrorMsg('Token tidak ditemukan')
+					setLoading(false)
+					return
 				}
-				router.push('/')
+
+				// Admin: hanya simpan adminToken (tanpa authToken)
+				if (purpose === 'admin') {
+					localStorage.setItem('adminToken', token)
+					router.push('/page/admin/dashboard')
+				} else {
+					localStorage.setItem('authToken', token)
+					window.dispatchEvent(new Event('authChanged'))
+					router.push('/')
+				}
 			}
 		} catch (err) {
 			setErrorMsg('Network error, try again')
