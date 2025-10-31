@@ -15,7 +15,6 @@ export default function Sidebar() {
     { icon: <ChartColumnStacked size={22} />, label: 'Category', path: '/page/admin/category' },
     { icon: <Package size={22} />, label: 'Product', path: '/page/admin/product' },
     { icon: <User size={22} />, label: 'Akun', path: '/page/admin/akun' },
-    { icon: <Users size={22} />, label: 'Detail Akun', path: '/page/admin/detail-akun' },
     { icon: <ClipboardList size={22} />, label: 'Orders', path: '/page/admin/order' },
   ]
 
