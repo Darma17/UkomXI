@@ -1,8 +1,9 @@
 "use client";
-import React, { useState, ChangeEvent } from "react";
+import React, { useState, ChangeEvent, useEffect } from "react";
 import { FaPlus, FaEdit, FaTrash } from "react-icons/fa";
 import { FaPencil } from "react-icons/fa6";
 import { Pencil, Trash2, Plus } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 
 
 interface CategoryData {
@@ -16,11 +17,29 @@ interface FormError {
 }
 
 export default function Category() {
-  const [categories, setCategories] = useState<CategoryData[]>([
-    { name: "Elektronik", description: "Produk gadget dan alat elektronik" },
-    { name: "Fashion", description: "Pakaian dan aksesoris terkini" },
-    { name: "Makanan", description: "Makanan ringan dan berat" },
-  ]);
+  const router = useRouter()
+  const [checked, setChecked] = useState(false)
+  const [allow, setAllow] = useState(false)
+  useEffect(() => {
+    const adminToken = localStorage.getItem('adminToken')
+    if (adminToken) { setAllow(true); setChecked(true); return }
+    const token = localStorage.getItem('authToken')
+    if (!token) { router.replace('/page/login-admin'); return }
+    fetch('http://127.0.0.1:8000/api/user', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(u => { if (u?.role === 'admin') setAllow(true); else router.replace('/page/login-admin') })
+      .catch(() => router.replace('/page/login-admin'))
+      .finally(() => setChecked(true))
+  }, [router])
+  if (!checked || !allow) return null
+
+  const [categories, setCategories] = useState<CategoryData[]>(
+    [
+      { name: "Elektronik", description: "Produk gadget dan alat elektronik" },
+      { name: "Fashion", description: "Pakaian dan aksesoris terkini" },
+      { name: "Makanan", description: "Makanan ringan dan berat" },
+    ]
+  );
 
   const [showModal, setShowModal] = useState<boolean>(false);
   const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);

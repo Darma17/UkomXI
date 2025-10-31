@@ -1,11 +1,33 @@
 'use client'
 
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Package, BarChart3, Users } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { useRouter } from 'next/navigation'
 
 export default function AdminDashboard() {
+  const router = useRouter()
+  const [checked, setChecked] = useState(false)
+  const [allow, setAllow] = useState(false)
+
+  useEffect(() => {
+    const adminToken = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null
+    if (adminToken) { setAllow(true); setChecked(true); return }
+    const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null
+    if (!token) { router.replace('/page/login-admin'); return }
+    fetch('http://127.0.0.1:8000/api/user', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(u => {
+        if (u && String(u.role || '') === 'admin') setAllow(true)
+        else router.replace('/page/login-admin')
+      })
+      .catch(() => router.replace('/page/login-admin'))
+      .finally(() => setChecked(true))
+  }, [router])
+
+  if (!checked || !allow) return null
+
   const salesData = [
     { month: 'Jan', sales: 400 },
     { month: 'Feb', sales: 600 },
