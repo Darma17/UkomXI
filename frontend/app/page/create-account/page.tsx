@@ -229,6 +229,7 @@ export default function CreateAccount() {
                 onSuccess={handleGoogleSuccess}
                 onError={() => setErrorMsg('Login Google gagal')}
               />
+              <span className='text-gray-800 absolute top-138 left-40 bg-white'>SignUp with google</span>
             </GoogleOAuthProvider>
           </div>
         </form>
