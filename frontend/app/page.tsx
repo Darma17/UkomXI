@@ -495,7 +495,7 @@ export default function HomePage() {
               </p>
               <div className="text-center mt-12">
                 <Link
-                  href="/books"
+                  href="/page/about"
                   className="relative inline-block px-8 py-3 font-medium text-black border border-t border-r border-b border-black border-l-4 border-l-blue-600 overflow-hidden group transition-all duration-500"
                 >
                   <span className="relative z-10 group-hover:text-white transition-colors duration-300">
