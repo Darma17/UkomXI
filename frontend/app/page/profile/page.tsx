@@ -696,7 +696,7 @@ export default function Profile() {
         <div className="w-full max-w-2xl relative">
           <button
             onClick={handleLogout}
-            className={`absolute right-0 top-1 flex items-center gap-1 text-red-600 text-sm hover:underline ${busy ? 'cursor-not-allowed opacity-70' : ''}`}
+            className={`absolute right-0 top-1 flex items-center gap-1 text-red-600 text-sm hover:underline cursor-pointer ${busy ? 'cursor-not-allowed opacity-70' : ''}`}
             disabled={busy}
           >
             <LogOut size={16} /> Keluar

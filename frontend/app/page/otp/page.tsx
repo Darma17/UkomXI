@@ -147,7 +147,7 @@ export default function OtpPage() {
 						value={otp}
 						onChange={(e) => setOtp(e.target.value)}
 						required
-						className="w-full px-4 py-2 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-white mb-4 border border-white"
+						className="w-full text-center px-4 py-2 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-white mb-4 border border-white"
 					/>
 					<button
 						type="submit"

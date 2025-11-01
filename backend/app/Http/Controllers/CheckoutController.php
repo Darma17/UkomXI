@@ -54,16 +54,28 @@ class CheckoutController extends Controller
 
         $orderId = 'ORDER-' . time() . '-' . $user->id . '-' . Str::random(6);
 
-        // Build item_details for Midtrans
+        // Build item_details untuk Midtrans (price harus integer)
         $itemDetails = [];
+        $itemsSubtotal = 0;
+        $MAX_NAME = 50; // batas aman Midtrans
+
         foreach ($data['items'] as $it) {
+            $priceInt = (int) round((float)$it['price']);
+            $qtyInt = (int) $it['quantity'];
+            $itemsSubtotal += ($priceInt * $qtyInt);
+            // nama item max 50 char
+            $rawTitle = (string)($it['title'] ?? '');
+            $normalizedTitle = preg_replace('/\s+/', ' ', $rawTitle);
+            $name = mb_substr($normalizedTitle ?? '', 0, $MAX_NAME);
+
             $itemDetails[] = [
                 'id' => (string)($it['book_id'] ?? ''),
-                'price' => (float)$it['price'],
-                'quantity' => (int)$it['quantity'],
-                'name' => mb_substr($it['title'], 0, 250)
+                'price' => $priceInt,
+                'quantity' => $qtyInt,
+                'name' => $name,
             ];
         }
+
         // Hitung ongkir dari kurir_id (jika ada) dan tambahkan sebagai item_details
         $shipping = 0.0;
         $kurirId = $request->input('kurir_id');
@@ -72,20 +84,35 @@ class CheckoutController extends Controller
             $kurir = Kurir::find($kurirId);
             if ($kurir) {
                 $shipping = (float) $kurir->harga;
+                $shipName = 'Ongkos Kirim - ' . (string)$kurir->nama;
+                $shipName = mb_substr(preg_replace('/\s+/', ' ', $shipName), 0, $MAX_NAME);
                 $itemDetails[] = [
                     'id' => 'SHIPPING-' . $kurir->id,
-                    'price' => $shipping,
+                    'price' => (int) round($shipping),
                     'quantity' => 1,
-                    'name' => 'Ongkos Kirim - ' . $kurir->nama,
+                    'name' => $shipName,
                 ];
             }
         }
-        $grossAmount = (float)$data['total'] + $shipping;
+
+        // Gross harus dari penjumlahan item_details agar valid oleh Midtrans (hitung dari array item_details)
+        $grossAmount = array_reduce($itemDetails, function ($sum, $d) {
+            return $sum + ((int)$d['price'] * (int)$d['quantity']);
+        }, 0);
+
+        // Log jika total dari FE tidak sama dengan subtotal hitungan server
+        $clientTotal = (int) round((float) $data['total']);
+        if ($clientTotal !== $itemsSubtotal) {
+            Log::warning('Client total differs from items subtotal', [
+                'client_total' => $clientTotal,
+                'items_subtotal' => $itemsSubtotal,
+            ]);
+        }
 
         $transaction = [
             'transaction_details' => [
                 'order_id' => $orderId,
-                'gross_amount' => $grossAmount,
+                'gross_amount' => (int) $grossAmount,
             ],
             'item_details' => $itemDetails,
             // optional: customer_details can be added
@@ -127,13 +154,17 @@ class CheckoutController extends Controller
                     'order_id' => $orderId,
                     'user_id' => $user->id,
                 ]);
-
-                // return a sanitized error to client (include Midtrans message if present)
                 $body = $resp->json() ?? [];
-                $midtransMsg = $body['status_message'] ?? ($body['message'] ?? null);
+                // Keluarkan detail yang lebih informatif
+                $midtransMsg = $body['status_message']
+                    ?? ($body['message'] ?? null)
+                    ?? (is_string($resp->body()) ? $resp->body() : null);
+                $errors = $body['error_messages'] ?? $body['validation_messages'] ?? null;
                 return response()->json([
                     'message' => 'Payment gateway error',
-                    'detail' => $midtransMsg
+                    'detail' => $midtransMsg,
+                    'errors' => $errors,
+                    'status' => $resp->status(),
                 ], 500);
             }
 
@@ -144,13 +175,12 @@ class CheckoutController extends Controller
                 PendingPayment::create([
                     'midtrans_order_id' => $orderId,
                     'user_id' => $user->id,
-                    // simpan items + address_id agar bisa dipakai saat notifikasi
                     'payload' => json_encode([
                         'items' => $data['items'],
                         'address_id' => $addressId,
                         'kurir_id' => $kurir?->id,
                     ]),
-                    'total' => $grossAmount,
+                    'total' => (int) $grossAmount,
                 ]);
             } catch (\Throwable $e) {
                 Log::error('Failed to persist pending payment', ['err' => $e->getMessage(), 'user_id' => $user->id, 'order_id' => $orderId]);
