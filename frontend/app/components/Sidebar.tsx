@@ -2,7 +2,7 @@
 
 import React from 'react'
 import { motion } from 'framer-motion'
-import { Home, Package, Users, BarChart3, User, ChartColumnStacked, ClipboardList, LogOut } from 'lucide-react'
+import { Home, Package, User, ChartColumnStacked, ClipboardList, LogOut, Truck } from 'lucide-react'
 import { useRouter, usePathname } from 'next/navigation'
 
 export default function Sidebar() {
@@ -15,6 +15,7 @@ export default function Sidebar() {
     { icon: <ChartColumnStacked size={22} />, label: 'Category', path: '/page/admin/category' },
     { icon: <Package size={22} />, label: 'Product', path: '/page/admin/product' },
     { icon: <User size={22} />, label: 'Akun', path: '/page/admin/akun' },
+    { icon: <Truck size={22} />, label: 'Kurir', path: '/page/admin/kurir' },
     { icon: <ClipboardList size={22} />, label: 'Orders', path: '/page/admin/order' },
   ]
 

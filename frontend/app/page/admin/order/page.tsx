@@ -218,7 +218,7 @@ export default function Orders() {
                     {/* Overlay saat menunggu konfirmasi customer */}
                     {o.status === "selesai" && !o.complete && (
                       <div className="absolute inset-0 rounded-md bg-black/50 flex items-center justify-center pointer-events-auto">
-                        <span className="text-white text-xs font-semibold">Masih Menunggu Konfirmasi</span>
+                        <span className="text-white text-xs font-semibold">Menunggu Konfirmasi...</span>
                       </div>
                     )}
                   </div>
@@ -245,7 +245,7 @@ export default function Orders() {
             <div className="px-6 py-4 border-b">
               <h2 className="text-lg font-semibold">Detail Order</h2>
               <p className="text-sm text-gray-600 mt-1">
-                Order Code:{" "}
+                Kode Pesanan:{" "}
                 <span className="font-medium text-gray-900">{selected.order_code}</span>
               </p>
             </div>
