@@ -52,6 +52,12 @@ class BookController extends Controller
 
     public function store(Request $request)
     {
+        // hanya admin/operator yang boleh menambah produk
+        $u = $request->user();
+        if (!$u) return response()->json(['message' => 'Unauthorized'], 401);
+        if (!in_array($u->role, ['admin','operator'], true)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
         $data = $request->validate([
             'category_id'   => 'required|exists:categories,id',
             'title'         => 'required|string',
@@ -101,6 +107,13 @@ class BookController extends Controller
 
     public function update(Request $request, Book $book)
     {
+        // admin bebas update; operator dibatasi
+        $u = $request->user();
+        if (!$u) return response()->json(['message' => 'Unauthorized'], 401);
+        if ($u->role === 'operator') {
+            // Operator tidak boleh edit detail produk; gunakan add-stock
+            return response()->json(['message' => 'Operator hanya boleh menambah stok'], 403);
+        }
         $data = $request->validate([
             'category_id'   => 'sometimes|exists:categories,id',
             'title'         => 'sometimes|string',
@@ -155,8 +168,28 @@ class BookController extends Controller
 
     public function destroy(Book $book)
     {
+        // hanya admin yang boleh hapus
+        $u = request()->user();
+        if (!$u) return response()->json(['message' => 'Unauthorized'], 401);
+        if ($u->role !== 'admin') return response()->json(['message' => 'Forbidden'], 403);
         $book->delete();
         return response()->json(['message' => 'Book deleted']);
+    }
+
+    // Tambah stok buku: admin/operator
+    public function addStock(Request $request, Book $book)
+    {
+        $u = $request->user();
+        if (!$u) return response()->json(['message' => 'Unauthorized'], 401);
+        if (!in_array($u->role, ['admin','operator'], true)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+        $data = $request->validate([
+            'amount' => 'required|integer|min:1',
+        ]);
+        $book->stock = (int)$book->stock + (int)$data['amount'];
+        $book->save();
+        return response()->json($book);
     }
 
     public function highlights()

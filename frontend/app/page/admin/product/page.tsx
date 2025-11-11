@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
@@ -72,10 +72,57 @@ export default function AdminProduct() {
     is_highlight?: boolean
     description?: string | null
     category_id?: number | null
+    created_at?: string | null
   }
   const [products, setProducts] = useState<BookRow[]>([])
   type Category = { id: number; name: string }
   const [categories, setCategories] = useState<Category[]>([])
+
+  // Search & Sort (admin) — diletakkan SEBELUM early return agar urutan Hooks konsisten
+  const [searchQuery, setSearchQuery] = useState('')
+  const [sortBy, setSortBy] = useState<string>('') // '', price-low, price-high, stock-high, stock-low, newest, oldest
+  const [filterCategoryId, setFilterCategoryId] = useState<string>('') // '' = semua kategori
+
+  const visibleProducts = useMemo(() => {
+    const q = (searchQuery || '').toLowerCase().trim()
+    let list = q
+      ? products.filter(p => (p.title || '').toLowerCase().includes(q))
+      : [...products]
+    // filter by category if selected
+    if (filterCategoryId) {
+      const cid = Number(filterCategoryId)
+      list = list.filter(p => Number(p.category?.id ?? p.category_id ?? 0) === cid)
+    }
+    switch (sortBy) {
+      case 'price-low':
+        list.sort((a, b) => Number(a.price || 0) - Number(b.price || 0))
+        break
+      case 'price-high':
+        list.sort((a, b) => Number(b.price || 0) - Number(a.price || 0))
+        break
+      case 'stock-high':
+        list.sort((a, b) => Number(b.stock || 0) - Number(a.stock || 0))
+        break
+      case 'stock-low':
+        list.sort((a, b) => Number(a.stock || 0) - Number(b.stock || 0))
+        break
+      case 'newest':
+        list.sort((a, b) => {
+          const ta = a.created_at ? new Date(a.created_at).getTime() : 0
+          const tb = b.created_at ? new Date(b.created_at).getTime() : 0
+          return tb - ta
+        })
+        break
+      case 'oldest':
+        list.sort((a, b) => {
+          const ta = a.created_at ? new Date(a.created_at).getTime() : 0
+          const tb = b.created_at ? new Date(b.created_at).getTime() : 0
+          return ta - tb
+        })
+        break
+    }
+    return list
+  }, [products, searchQuery, sortBy, filterCategoryId])
 
   const handleImageChange = (e: any) => {
     const file = e.target.files[0]
@@ -282,6 +329,44 @@ export default function AdminProduct() {
         <div className="mb-4 px-4 py-2 bg-red-100 text-red-700 rounded">{errorMsg}</div>
       )}
 
+      {/* Control bar: Search (kiri) + Category & Sort (kanan) */}
+      <div className="mb-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div className="w-full sm:w-1/2">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Cari judul produk..."
+            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
+          />
+        </div>
+        <div className="w-full sm:w-1/2 flex gap-3">
+          <select
+            value={filterCategoryId}
+            onChange={(e) => setFilterCategoryId(e.target.value)}
+            className="flex-1 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
+          >
+            <option value="">Semua Kategori</option>
+            {categories.map(c => (
+              <option key={c.id} value={String(c.id)}>{c.name}</option>
+            ))}
+          </select>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="flex-1 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black"
+          >
+            <option value="">Urutkan</option>
+            <option value="price-low">Harga Termurah</option>
+            <option value="price-high">Harga Termahal</option>
+            <option value="stock-high">Stock Terbanyak</option>
+            <option value="stock-low">Stock Terdikit</option>
+            <option value="newest">Baru Ditambahkan</option>
+            <option value="oldest">Lama Ditambahkan</option>
+          </select>
+        </div>
+      </div>
+
       {/* Table */}
       <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
         <table className="min-w-full text-sm">
@@ -298,7 +383,7 @@ export default function AdminProduct() {
             </tr>
           </thead>
            <tbody>
-            {products.map((p, index) => (
+            {visibleProducts.map((p, index) => (
               <motion.tr
                 key={p.id}
                 className="relative group border-b last:border-none odd:bg-white even:bg-gray-50 hover:bg-gray-100/70 transition-colors"

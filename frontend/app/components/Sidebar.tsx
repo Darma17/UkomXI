@@ -5,7 +5,12 @@ import { motion } from 'framer-motion'
 import { Home, Package, User, ChartColumnStacked, ClipboardList, LogOut, Truck } from 'lucide-react'
 import { useRouter, usePathname } from 'next/navigation'
 
-export default function Sidebar() {
+interface SidebarProps {
+  activePage?: string
+  setActivePage?: (p: string) => void
+}
+
+export default function Sidebar({ activePage, setActivePage }: SidebarProps) {
   const [hovered, setHovered] = React.useState(false)
   const router = useRouter()
   const pathname = usePathname()
@@ -19,9 +24,14 @@ export default function Sidebar() {
     { icon: <ClipboardList size={22} />, label: 'Orders', path: '/page/admin/order' },
   ]
 
+  // Ambil label yang cocok langsung dari URL (hanya satu atau undefined)
+  const matchedLabel = menuItems.find(mi => pathname.startsWith(mi.path))?.label
+  const noMatchedRoute = !matchedLabel
+
   // Fungsi navigasi
-  const handleNavigation = (path: string) => {
+  const handleNavigation = (path: string, label: string) => {
     router.push(path)
+    if (setActivePage) setActivePage(label)
   }
 
   // Logout admin: revoke token (jika ada) lalu hapus adminToken dan arahkan ke login-admin
@@ -65,14 +75,18 @@ export default function Sidebar() {
 
       {/* Menu Items */}
       <div className="flex flex-col gap-6 w-full">
-        {menuItems.map((item) => {
-          const isActive = pathname.startsWith(item.path) // 🔹 Deteksi aktif otomatis
+        {menuItems.map(item => {
+          // Jika pathname cocok → hanya highlight item itu
+          // Jika tidak ada kecocokan pathname → fallback ke activePage
+          const isActive = matchedLabel
+            ? matchedLabel === item.label
+            : (activePage ? activePage === item.label : false)
 
           return (
             <motion.div
               key={item.label}
               whileHover={{ scale: 1.05 }}
-              onClick={() => handleNavigation(item.path)}
+              onClick={() => handleNavigation(item.path, item.label)}
               className={`flex items-center gap-3 px-4 py-2 cursor-pointer transition-all ${
                 isActive ? 'bg-white text-black' : 'hover:bg-white/10 text-white'
               }`}
@@ -90,10 +104,12 @@ export default function Sidebar() {
 
       {/* Logout button at bottom */}
       <div className="mt-auto w-full px-2">
-        <motion.div
-          whileHover={{ scale: 1.05 }}
+        <div
           onClick={handleAdminLogout}
-          className="flex items-center gap-3 mx-2 mb-4 px-4 py-2 cursor-pointer transition-all hover:bg-white/10 text-white"
+          className={`mx-2 mb-4 py-2 cursor-pointer transition-all text-white rounded-md ${
+            hovered ? 'flex items-center gap-3 px-4 hover:bg-white/10' : 'flex items-center justify-center px-0 hover:bg-transparent'
+          }`}
+          title="Logout"
         >
           <LogOut size={22} />
           {hovered && (
@@ -101,7 +117,7 @@ export default function Sidebar() {
               Logout
             </motion.span>
           )}
-        </motion.div>
+        </div>
       </div>
     </motion.div>
   )

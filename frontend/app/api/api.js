@@ -10,13 +10,16 @@ const api = axios.create({
 api.interceptors.request.use(
     (config) => {
         if (typeof window !== 'undefined') {
-            const token = localStorage.getItem('authToken');
+            const admin = localStorage.getItem('adminToken');
+            const operator = localStorage.getItem('operatorToken');
+            const customer = localStorage.getItem('authToken');
+            const token = admin || operator || customer || '';
+
+            config.headers = config.headers || {};
             if (token) {
-                config.headers = config.headers || {};
                 config.headers.Authorization = `Bearer ${token}`;
             } else {
-                // ensure Authorization removed if no token
-                if (config.headers) delete config.headers.Authorization;
+                delete config.headers.Authorization;
             }
         }
         return config;

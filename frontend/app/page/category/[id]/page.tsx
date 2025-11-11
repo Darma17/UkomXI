@@ -146,7 +146,7 @@ export default function CategoryPage() {
             <p className="text-gray-800 mb-4">Untuk menambahkan ke keranjang, silakan login terlebih dahulu.</p>
             <div className="flex justify-center gap-3">
               <button onClick={() => { setShowLoginModal(false); router.push('/page/sigin') }} className="px-4 py-2 bg-black text-white rounded-md">OK</button>
-              <button onClick={() => setShowLoginModal(false)} className="px-4 py-2 border rounded-md">Batal</button>
+              <button onClick={() => setShowLoginModal(false)} className="px-4 py-2 border rounded-md border-gray-800 text-gray-800">Batal</button>
             </div>
           </div>
         </div>

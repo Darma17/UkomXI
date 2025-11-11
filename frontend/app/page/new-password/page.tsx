@@ -1,10 +1,10 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Eye, EyeOff } from 'lucide-react' // 👈 pastikan lucide-react sudah terinstall
 
-export default function NewPassword() {
+function NewPasswordInner() {
     const router = useRouter()
     const searchParams = useSearchParams()
     const emailParam = searchParams?.get('email') || ''
@@ -35,6 +35,14 @@ export default function NewPassword() {
         setErrorMsg('')
         setLoading(true)
 
+        // validasi password baru: huruf/angka saja dan minimal 8
+        const PASS_REGEX = /^[A-Za-z0-9]{8,}$/
+        if (!PASS_REGEX.test(password)) {
+            setErrorMsg('Password harus huruf/angka saja dan minimal 8 karakter')
+            setLoading(false)
+            return
+        }
+
         if (password !== conPass) {
             setErrorMsg('Password dan konfirmasi tidak sama!')
             setLoading(false)
@@ -60,7 +68,6 @@ export default function NewPassword() {
                 return
             }
 
-            alert('Password berhasil diubah! Silakan login kembali.')
             router.push('/page/sigin?reset=1')
         } catch (err) {
             console.error(err)
@@ -101,7 +108,7 @@ export default function NewPassword() {
                         <input
                             id="password-input"
                             type={showPassword ? 'text' : 'password'}
-                            placeholder="Password Baru"
+                            placeholder="Password Baru (huruf/angka, ≥8)"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             required
@@ -162,5 +169,14 @@ export default function NewPassword() {
                 }
             `}</style>
         </div>
+    )
+}
+
+// Wrapper dengan Suspense
+export default function NewPasswordPage() {
+    return (
+        <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Memuat...</div>}>
+            <NewPasswordInner />
+        </Suspense>
     )
 }

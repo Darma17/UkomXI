@@ -1,12 +1,13 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { GoogleLogin, GoogleOAuthProvider } from "@react-oauth/google"
 import axios from "axios"
-import { Eye, EyeOff } from "lucide-react" // ← ikon dari lucide-react (sudah tersedia di Next.js 14+)
+import { Eye, EyeOff } from "lucide-react"
+import ReCAPTCHA from "react-google-recaptcha"
 
-export default function SignIn() {
+function SignInInner() {
 	const router = useRouter()
 	const searchParams = useSearchParams()
 	const [email, setEmail] = useState('')
@@ -15,6 +16,7 @@ export default function SignIn() {
 	const [loading, setLoading] = useState(false)
 	const [errorMsg, setErrorMsg] = useState('')
 	const [successMsg, setSuccessMsg] = useState('')
+	const [captchaValue, setCaptchaValue] = useState<string>("")
 
 	// Auto-hide error
 	useEffect(() => {
@@ -35,13 +37,21 @@ export default function SignIn() {
 	async function handleSubmit(e: React.FormEvent) {
 		e.preventDefault()
 		setErrorMsg('')
-		setLoading(true)
 
+		// ✅ Pastikan captcha sudah diisi
+		if (!captchaValue) {
+			setErrorMsg('Silakan verifikasi captcha terlebih dahulu')
+			return
+		}
+
+		setLoading(true)
 		try {
+			// Verifikasi captcha ke backend (opsional, disarankan)
+			// Anda bisa kirim juga ke backend bersamaan dengan login data
 			const res = await fetch('http://127.0.0.1:8000/api/login/customer', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ email, password }),
+				body: JSON.stringify({ email, password, captchaToken: captchaValue }),
 			})
 
 			const data = await res.json().catch(() => ({}))
@@ -53,7 +63,7 @@ export default function SignIn() {
 			}
 
 			router.push(`/page/otp?email=${encodeURIComponent(email)}`)
-		} catch (err) {
+		} catch {
 			setErrorMsg("Terjadi Kesalahan, coba lagi")
 		} finally {
 			setLoading(false)
@@ -133,14 +143,22 @@ export default function SignIn() {
 							Lupa Password?
 						</a>
 					</div>
+					{/* === reCAPTCHA === */}
+					<div className="flex justify-center mt-3">
+						<ReCAPTCHA
+							sitekey="6LcdwggsAAAAAIA8kcX7FrkAXRspjzrv94ycga52" // test key
+							onChange={(value: string | null) => setCaptchaValue(value ?? "")}
+						/>
+					</div>
 
 					<button
 						type="submit"
 						disabled={loading}
-						className="w-full py-2 mb-0 bg-white text-black rounded-md font-semibold hover:bg-gray-200 transition disabled:opacity-60"
+						className="w-full py-2 bg-white text-black rounded-md font-semibold hover:bg-gray-200 transition disabled:opacity-60"
 					>
 						{loading ? 'Loading...' : 'Masuk'}
 					</button>
+
 
 					<div className="my-3 text-center text-sm text-gray-500">OR</div>
 
@@ -192,5 +210,13 @@ export default function SignIn() {
 				}
 			`}</style>
 		</div>
+	)
+}
+
+export default function SignIn() {
+	return (
+		<Suspense fallback={<div className="min-h-screen flex items-center justify-center">Memuat...</div>}>
+			<SignInInner />
+		</Suspense>
 	)
 }

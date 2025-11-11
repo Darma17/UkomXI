@@ -17,6 +17,11 @@ export default function Profile() {
   const [tempName, setTempName] = useState('')
   const [email, setEmail] = useState('')
   const [userId, setUserId] = useState<number | null>(null)
+  const [tempatLahir, setTempatLahir] = useState<string>('')               // tampil di profil
+  const [tanggalLahir, setTanggalLahir] = useState<string>('')             // YYYY-MM-DD
+  const [tempTempatLahir, setTempTempatLahir] = useState<string>('')       // untuk modal
+  const [tempTanggalLahir, setTempTanggalLahir] = useState<string>('')     // untuk modal
+  const [profileEditErr, setProfileEditErr] = useState<string>('')
 
   const [isHovering, setIsHovering] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -44,6 +49,23 @@ export default function Profile() {
     }
   }
 
+  // Helper umur
+  function calcAge(dateStr: string): number | null {
+    if (!dateStr) return null
+    const dob = new Date(dateStr)
+    if (isNaN(dob.getTime())) return null
+    const today = new Date()
+    let age = today.getFullYear() - dob.getFullYear()
+    const m = today.getMonth() - dob.getMonth()
+    if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--
+    return age
+  }
+  // Batas input date: min = 100 tahun lalu, max = 15 tahun lalu
+  const today = new Date()
+  const minDate = new Date(today.getFullYear() - 100, today.getMonth(), today.getDate())
+  const maxDate = new Date(today.getFullYear() - 15, today.getMonth(), today.getDate())
+  const fmtDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
   // Fetch user data on mount
   useEffect(() => {
     async function loadUser() {
@@ -59,6 +81,10 @@ export default function Profile() {
         setName(u?.name ?? '')
         setTempName(u?.name ?? '')
         setEmail(u?.email ?? '')
+        // set tempat/tanggal lahir (tanggal disimpan sebagai YYYY-MM-DD)
+        setTempatLahir(u?.tempat_lahir ?? '')
+        const tgl = (u?.tanggal_lahir ?? '') as string
+        setTanggalLahir(tgl ? String(tgl).slice(0, 10) : '')
         // profile_image bisa berisi path relatif (mis: profile/abc.jpg) atau null
         const imgPath = u?.profile_image
         if (imgPath) {
@@ -77,14 +103,33 @@ export default function Profile() {
     loadUser()
   }, [])
 
-  // Simpan nama ke server
+  // Simpan profil (nama + tempat lahir + tanggal lahir) ke server
   async function saveName() {
     if (!userId) return
     const token = localStorage.getItem('authToken') || ''
+    setProfileEditErr('')
+    // Validasi Nama (huruf & spasi)
+    const NAME_REGEX = /^[A-Za-zÀ-ÖØ-öø-ÿ\s]+$/u
+    if (!NAME_REGEX.test((tempName || '').trim())) {
+      setProfileEditErr('Nama hanya boleh berisi huruf dan spasi')
+      return
+    }
+    // Validasi tanggal lahir: umur 15–100 (inklusif)
+    if (!tempTanggalLahir) {
+      setProfileEditErr('Tanggal lahir wajib diisi')
+      return
+    }
+    const age = calcAge(tempTanggalLahir)
+    if (age === null || age < 15 || age > 100) {
+      setProfileEditErr('Umur harus antara 15 hingga 100 tahun')
+      return
+    }
     setSavingName(true)
     try {
       const fd = new FormData()
       fd.append('name', tempName)
+      fd.append('tempat_lahir', tempTempatLahir)
+      fd.append('tanggal_lahir', tempTanggalLahir)
       const res = await fetch(`http://127.0.0.1:8000/api/users/${userId}`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}` },
@@ -92,7 +137,10 @@ export default function Profile() {
       })
       if (res.ok) {
         setName(tempName)
+        setTempatLahir(tempTempatLahir)
+        setTanggalLahir(tempTanggalLahir)
         setIsEditNameOpen(false)
+        setProfileEditErr('')
       }
     } catch {
       // ignore
@@ -299,6 +347,25 @@ export default function Profile() {
   const [prefillKabName, setPrefillKabName] = useState<string | null>(null)
   const [prefillKecName, setPrefillKecName] = useState<string | null>(null)
   const WIL_BASE = 'https://www.emsifa.com/api-wilayah-indonesia/api'
+
+  // Dropdown untuk Tempat Lahir (kota/kab lahir)
+  const [birthProvId, setBirthProvId] = useState<string>('')                 // provinsi lahir (id)
+  const [birthRegencies, setBirthRegencies] = useState<Option[]>([])         // daftar kota/kab dari provinsi lahir
+  const [loadingBirthReg, setLoadingBirthReg] = useState(false)
+
+  async function loadBirthRegencies(provId: string) {
+    if (!provId) { setBirthRegencies([]); return }
+    setLoadingBirthReg(true)
+    try {
+      const res = await fetch(`${WIL_BASE}/regencies/${provId}.json`)
+      const data = await res.json()
+      setBirthRegencies((data || []).map((x: any) => ({ id: String(x.id), name: String(x.name) })))
+    } catch {
+      setBirthRegencies([])
+    } finally {
+      setLoadingBirthReg(false)
+    }
+  }
 
   async function loadProvinces() {
     if (provinces.length > 0) return
@@ -774,16 +841,38 @@ export default function Profile() {
         <p className="text-black text-sm mb-1">{email || ''}</p>
 
         {/* Nama + Edit */}
-        <div className="flex items-center space-x-2 mb-6">
+        <div className="flex items-center space-x-2 mb-2">
           <h2 className="text-xl text-black font-semibold">{name}</h2>
           <button
-           onClick={() => setIsEditNameOpen(true)}
-           className={`p-1 hover:bg-gray-200 rounded-full transition ${busy ? 'cursor-not-allowed opacity-70' : ''}`}
-           disabled={busy}
-           >
+            onClick={() => {
+              setIsEditNameOpen(true)
+             // Prefill modal fields
+             setTempName(name || '')
+             setTempTempatLahir(tempatLahir || '')
+             setTempTanggalLahir(tanggalLahir || '')
+             setProfileEditErr('')
+           // Siapkan dropdown provinsi & reset pilihan kota lahir
+           loadProvinces()
+           setBirthProvId('')
+           setBirthRegencies([])
+            }}
+            className={`p-1 hover:bg-gray-200 rounded-full transition ${busy ? 'cursor-not-allowed opacity-70' : ''}`}
+            disabled={busy}
+          >
            <Pencil size={18} className="text-gray-700" />
            </button>
         </div>
+       {/* Tempat/Tanggal Lahir */}
+       <div className="mb-6 text-sm text-gray-700">
+         <span className="text-gray-600">Tempat/Tanggal Lahir: </span>
+         <span className="text-black">
+           {tempatLahir ? tempatLahir : '-'}
+           {` , `}
+           {tanggalLahir
+             ? new Date(tanggalLahir).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
+             : '-'}
+         </span>
+       </div>
 
         {/* Navigasi Tabs */}
         <div className="flex space-x-10 border-b border-gray-300 mb-6">
@@ -1060,36 +1149,90 @@ export default function Profile() {
             )}
         </div>
 
-        {/* Modal Edit Nama */}
+        {/* Modal Edit Nama (ditingkatkan menjadi edit profil) */}
         {isEditNameOpen && (
-            <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-xl w-80 shadow-lg">
-                <h3 className="text-lg font-semibold mb-3 text-black">Ubah Nama</h3>
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded-xl w-96 shadow-lg">
+              <h3 className="text-lg font-semibold mb-4 text-black">Ubah Profil</h3>
+             {profileEditErr && (
+               <div className="mb-3 px-3 py-2 rounded bg-red-100 text-red-700 text-sm">{profileEditErr}</div>
+             )}
+              <div className="space-y-3 mb-2">
+                {/* Nama */}
                 <input
-                type="text"
-                value={tempName}
-                onChange={(e) => setTempName(e.target.value)}
-                className="w-full border rounded-md px-3 py-2 mb-4 focus:outline-none focus:ring-2 text-black focus:ring-black"
-                disabled={busy}
+                  type="text"
+                  value={tempName}
+                  onChange={(e) => setTempName(e.target.value)}
+                  className="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 text-black focus:ring-black"
+                  placeholder="Nama"
+                  required
                 />
-                <div className="flex justify-end space-x-3">
+             {/* Tempat Lahir (Provinsi -> Kota/Kab dari API EMSIFA) */}
+             <div className="space-y-2">
+               <select
+                 value={birthProvId}
+                 onChange={(e) => {
+                   const id = e.target.value
+                   setBirthProvId(id)
+                   setTempTempatLahir('')     // reset nama kota lahir ketika provinsi berubah
+                   setBirthRegencies([])
+                   if (id) loadBirthRegencies(id)
+                 }}
+                 onFocus={() => loadProvinces()}
+                 className="w-full border rounded-md px-3 py-2 text-black focus:outline-none focus:ring-2 focus:ring-black"
+               >
+                 <option value="">{loadingProv ? 'Memuat provinsi...' : 'Pilih Provinsi Lahir'}</option>
+                 {provinces.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+               </select>
+               <select
+                 value={
+                   tempTempatLahir
+                     ? (birthRegencies.find(r => r.name === tempTempatLahir)?.id || '')
+                     : ''
+                 }
+                 onChange={(e) => {
+                   const id = e.target.value
+                   const opt = birthRegencies.find(r => r.id === id)
+                   setTempTempatLahir(opt?.name || '')
+                 }}
+                 disabled={!birthProvId}
+                 className="w-full border rounded-md px-3 py-2 text-black focus:outline-none focus:ring-2 focus:ring-black disabled:opacity-60"
+               >
+                 <option value="">
+                   {!birthProvId ? 'Pilih Provinsi terlebih dahulu' : (loadingBirthReg ? 'Memuat kota/kab...' : 'Pilih Kota/Kab Lahir')}
+                 </option>
+                 {birthRegencies.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+               </select>
+             </div>
+              {/* Tanggal Lahir */}
+              <input
+                type="date"
+                value={tempTanggalLahir}
+                onChange={(e) => setTempTanggalLahir(e.target.value)}
+                min={fmtDate(minDate)}
+                max={fmtDate(maxDate)}
+                className="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 text-black focus:ring-black"
+                required
+              />
+              </div>
+              <div className="flex justify-end space-x-3">
                 <button
-                    onClick={() => setIsEditNameOpen(false)}
-                    className={`text-gray-500 hover:text-black ${busy ? 'cursor-not-allowed opacity-70' : ''}`}
-                    disabled={busy}
+                  onClick={() => setIsEditNameOpen(false)}
+                  className={`text-gray-500 hover:text-black ${busy ? 'cursor-not-allowed opacity-70' : ''}`}
+                  disabled={busy}
                 >
-                    Batal
+                  Batal
                 </button>
                 <button
-                    onClick={saveName}
-                    className={`bg-blue-600 text-white px-4 py-1 rounded-md hover:bg-blue-700 ${busy ? 'cursor-not-allowed opacity-70' : ''}`}
-                    disabled={busy}
+                  onClick={saveName}
+                  className={`bg-blue-600 text-white px-4 py-1 rounded-md hover:bg-blue-700 ${busy ? 'cursor-not-allowed opacity-70' : ''}`}
+                  disabled={busy}
                 >
-                    Simpan
+                  Simpan
                 </button>
-                </div>
+              </div>
             </div>
-            </div>
+          </div>
         )}
 
         {/* Modal Edit Alamat (reuse untuk tambah & edit) */}

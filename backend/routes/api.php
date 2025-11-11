@@ -71,6 +71,7 @@ Route::delete('book-discounts/cleanup', [BookDiscountController::class, 'deactiv
 // Authentication routes (login by role -> send OTP; verify OTP -> issue Sanctum token; logout)
 Route::post('login/customer', [UserController::class, 'loginCustomer']);
 Route::post('login/admin', [UserController::class, 'loginAdmin']);
+Route::post('login/operator', [UserController::class, 'loginOperator']);
 Route::post('verify-otp', [UserController::class, 'verifyOtp']);
 Route::post('/google-login', [UserController::class, 'googleLogin']);
 
@@ -104,4 +105,7 @@ Route::post('checkout/complete', [CheckoutController::class, 'complete'])->middl
 
 // Midtrans notification (no auth) — Midtrans will POST here
 Route::post('checkout/midtrans/notification', [CheckoutController::class, 'notification']);
+
+// Buku: tambah stok (khusus admin/operator)
+Route::post('books/{book}/add-stock', [BookController::class, 'addStock'])->middleware('auth:sanctum');
 

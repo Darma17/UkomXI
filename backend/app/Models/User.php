@@ -12,12 +12,17 @@ class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable;
 
-    protected $fillable = ['name', 'email', 'password', 'role', 'email_otp', 'email_otp_expires_at', 'current_api_token', 'profile_image'];
+    protected $fillable = [
+        'name','email','password','role',
+        'email_otp','email_otp_expires_at','current_api_token',
+        'profile_image','tempat_lahir','tanggal_lahir'
+    ];
 
     protected $hidden = ['password', 'email_otp', 'current_api_token'];
 
     protected $casts = [
         'email_otp_expires_at' => 'datetime',
+        'tanggal_lahir' => 'date',
     ];
 
     public function setPasswordAttribute($value)

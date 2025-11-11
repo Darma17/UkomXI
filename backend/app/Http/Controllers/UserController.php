@@ -8,10 +8,12 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\Mime\Part\TextPart;
 use Illuminate\Support\Str;
+use Carbon\Carbon;
 
 class UserController extends Controller
 {
@@ -28,13 +30,19 @@ class UserController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'name' => 'required|string',
+            'name' => ['required','string','regex:/^[A-Za-zÀ-ÖØ-öø-ÿ\s]+$/u'],
             'email' => 'required|email|unique:users',
-            'password' => 'required|min:6',
-            'role' => 'in:customer,admin'
+            'password' => ['required','min:8','regex:/^[A-Za-z0-9]+$/'],
+            'role' => 'in:customer,admin,operator',
+            'tempat_lahir' => 'nullable|string',
+            'tanggal_lahir' => 'nullable|date',
+        ], [
+            'name.regex' => 'Nama hanya boleh berisi huruf dan spasi',
+            'password.regex' => 'Password hanya boleh berisi huruf dan angka',
         ]);
 
         $validated['password'] = Hash::make($validated['password']);
+        // kolom opsional otomatis ikut karena fillable
         $user = User::create($validated);
 
         return response()->json($user, 201);
@@ -43,13 +51,30 @@ class UserController extends Controller
     public function update(Request $request, User $user)
     {
         $validated = $request->validate([
-            'name' => 'sometimes|string',
+            'name' => 'sometimes|string|regex:/^[A-Za-zÀ-ÖØ-öø-ÿ\s]+$/u',
             'email' => 'sometimes|email|unique:users,email,' . $user->id,
-            'role' => 'sometimes|in:customer,admin',
+            'role' => 'sometimes|in:customer,admin,operator',
             // file upload tanpa bergantung pada mimetypes/image
             'profile_image' => 'nullable|file|max:5120',
             'profile_image_path' => 'sometimes|string',
+            'tempat_lahir' => 'sometimes|nullable|string',
+            'tanggal_lahir' => 'sometimes|nullable|date',
+        ], [
+            'name.regex' => 'Nama hanya boleh berisi huruf dan spasi',
         ]);
+
+        // Validasi umur jika tanggal_lahir diisi: minimal 15, maksimal 100 tahun
+        if ($request->filled('tanggal_lahir')) {
+            try {
+                $dob = Carbon::parse($request->input('tanggal_lahir'));
+                $age = $dob->age;
+                if ($age < 15 || $age > 100) {
+                    return response()->json(['message' => 'Umur harus antara 15 hingga 100 tahun'], 422);
+                }
+            } catch (\Throwable $e) {
+                return response()->json(['message' => 'Format tanggal lahir tidak valid'], 422);
+            }
+        }
 
         try {
             // 1) Upload file (tanpa finfo, pakai move())
@@ -116,6 +141,8 @@ class UserController extends Controller
             if ($request->has('name')) { $user->name = (string)$request->input('name'); }
             if ($request->has('email')) { $user->email = (string)$request->input('email'); }
             if ($request->has('role'))  { $user->role  = (string)$request->input('role'); }
+            if ($request->has('tempat_lahir')) { $user->tempat_lahir = $request->input('tempat_lahir'); }
+            if ($request->has('tanggal_lahir')) { $user->tanggal_lahir = $request->input('tanggal_lahir'); }
 
             $user->save();
             return response()->json($user);
@@ -142,18 +169,41 @@ class UserController extends Controller
     {
         return $this->handleLogin($request, 'admin');
     }
+    // New: login for operator
+    public function loginOperator(Request $request)
+    {
+        return $this->handleLogin($request, 'operator');
+    }
 
     // Helper to validate credentials, role, generate OTP, send email, and cache OTP
     protected function handleLogin(Request $request, string $requiredRole)
     {
+        // ✅ Validasi input termasuk captchaToken
         $validated = $request->validate([
             'email' => 'required|email',
             'password' => 'required|string',
+            'captchaToken' => 'required|string',
         ]);
 
+        // ✅ Verifikasi token reCAPTCHA ke server Google
+        $response = Http::asForm()->post('https://www.google.com/recaptcha/api/siteverify', [
+            'secret' => env('RECAPTCHA_SECRET_KEY'), // tambahkan di .env
+            'response' => $validated['captchaToken'],
+        ]);
+
+        if (!$response->successful() || !$response->json('success')) {
+            Log::warning('Captcha verification failed', [
+                'email' => $validated['email'],
+                'response' => $response->json(),
+            ]);
+
+            return response()->json(['message' => 'Verifikasi captcha gagal'], 400);
+        }
+
+        // ✅ Proses login seperti biasa
         $user = User::where('email', $validated['email'])->first();
 
-        if (! $user || ! Hash::check($validated['password'], $user->password)) {
+        if (!$user || !Hash::check($validated['password'], $user->password)) {
             return response()->json(['message' => 'Email atau Password Salah'], 401);
         }
 
@@ -161,97 +211,37 @@ class UserController extends Controller
             return response()->json(['message' => 'Unauthorized role'], 403);
         }
 
-        // generate 6-digit OTP
+        // Generate 6-digit OTP
         $otp = random_int(100000, 999999);
-
-        // store OTP in cache for 5 minutes
         $cacheKey = 'otp:' . $user->email;
         Cache::put($cacheKey, $otp, now()->addMinutes(5));
 
-        // send OTP via HTML email with plain-text fallback
+        // Email OTP (HTML)
         $html = '
         <!doctype html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width,initial-scale=1">
-        </head>
-        <body style="font-family: Arial, sans-serif; background:#f4f6f8; margin:0; padding:20px;">
-          <table align="center" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px; margin:0 auto;">
-            <tr>
-              <td style="padding:20px 0; text-align:center;">
-                <h2 style="margin:0; color:#333;">BukuKu</h2>
-              </td>
-            </tr>
-            <tr>
-              <td>
-                <div style="background:#ffffff; border-radius:8px; padding:30px; box-shadow:0 2px 6px rgba(0,0,0,0.06); text-align:center;">
-                  <p style="color:#666; margin:0 0 10px;">Gunakan kode di bawah ini untuk masuk ke BukuKu.</p>
-                  <div style="display:inline-block; margin:20px 0; padding:18px 26px; border-radius:8px; background:linear-gradient(90deg,#fafafa,#f0f3f7); border:1px solid #e6ecf1;">
-                    <span style="font-size:28px; letter-spacing:4px; font-weight:700; color:#111;">' . $otp . '</span>
-                  </div>
-                  <p style="color:#999; font-size:13px; margin:10px 0 0;">kode ini berlaku selama 5 menit. Kalau kamu tidak meminta kode ini, tolong abaikan.</p>
-                  <hr style="border:none; height:1px; background:#eef2f6; margin:20px 0;" />
-                  <p style="font-size:12px; color:#b0b8c1; margin:0;">Butuh bantuan? Balas email ini atau hubungi kami.</p>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td style="text-align:center; padding:18px 0; color:#b0b8c1; font-size:12px;">
-                &copy; ' . date('Y') . ' BukuKu. All rights reserved.
-              </td>
-            </tr>
-          </table>
-        </body>
-        </html>
-        ';
-
-        // verify basic mail configuration before attempting to send
-        $mailer = env('MAIL_MAILER');
-        $from = env('MAIL_FROM_ADDRESS');
-
-        if (empty($mailer) || empty($from)) {
-            Log::error('Mail config missing', ['MAIL_MAILER' => $mailer, 'MAIL_FROM_ADDRESS' => $from]);
-            Cache::forget($cacheKey);
-            return response()->json([
-                'message' => 'Mail configuration incomplete. Please set MAIL_MAILER and MAIL_FROM_ADDRESS in .env'
-            ], 500);
-        }
+        <html><head><meta charset="utf-8"></head>
+        <body style="font-family: Arial; background:#f4f6f8; margin:0; padding:20px;">
+        <div style="max-width:600px; margin:auto; background:white; border-radius:8px; padding:30px;">
+            <h2 style="text-align:center;">Kode OTP BukuKu</h2>
+            <p style="text-align:center;">Gunakan kode di bawah untuk login:</p>
+            <div style="text-align:center; font-size:24px; font-weight:bold; margin:20px 0;">' . $otp . '</div>
+            <p style="color:#888; text-align:center;">Kode berlaku selama 5 menit.</p>
+        </div>
+        </body></html>';
 
         try {
-            // Log attempt
-            Log::info('Attempting to send OTP email', ['email' => $user->email, 'mailer' => $mailer]);
-
-            // Use Mail::html helper to build proper MIME message for HTML emails
             Mail::html($html, function ($message) use ($user) {
                 $message->to($user->email)
                     ->subject('Kode OTP BukuKu')
-                    ->from(config('mail.from.address', env('MAIL_FROM_ADDRESS')), config('mail.from.name', env('MAIL_FROM_NAME', 'BukuKu')));
+                    ->from(config('mail.from.address'), config('mail.from.name', 'BukuKu'));
             });
-
-            // If no exceptions thrown, assume queued/sent — log success
-            Log::info('OTP email sent (attempted)', ['email' => $user->email]);
-
         } catch (\Throwable $e) {
-            // Log full exception for debugging (do not expose details to client)
-            Log::error('Gagal mengirim OTP', [
-                'email' => $user->email,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'mailer' => $mailer,
-            ]);
-
-            // remove OTP from cache because email delivery failed
             Cache::forget($cacheKey);
-
-            // Return JSON for Postman / frontend
-            return response()->json([
-                'message' => 'Gagal mengirim OTP. Periksa konfigurasi email.'
-            ], 500);
+            Log::error('Gagal kirim OTP', ['email' => $user->email, 'error' => $e->getMessage()]);
+            return response()->json(['message' => 'Gagal mengirim OTP. Periksa konfigurasi email.'], 500);
         }
 
-        // return success message (do NOT return the OTP)
-        return response()->json(['message' => 'OTP sent to email', 'email' => $user->email], 200);
+        return response()->json(['message' => 'OTP dikirim ke email', 'email' => $user->email], 200);
     }
 
     // Verify OTP and issue Sanctum token
@@ -373,7 +363,9 @@ class UserController extends Controller
         $validated = $request->validate([
             'email' => 'required|email',
             'reset_token' => 'required|string',
-            'password' => 'required|min:6|confirmed'
+            'password' => ['required','min:8','regex:/^[A-Za-z0-9]+$/','confirmed'],
+        ], [
+            'password.regex' => 'Password hanya boleh berisi huruf dan angka',
         ]);
 
         $user = User::where('email', $validated['email'])->first();
@@ -402,9 +394,12 @@ class UserController extends Controller
     public function sendRegisterOtp(Request $request)
     {
         $validated = $request->validate([
-            'name' => 'required|string',
+            'name' => ['required','string','regex:/^[A-Za-zÀ-ÖØ-öø-ÿ\s]+$/u'],
             'email' => 'required|email',
-            'password' => 'required|min:6|confirmed',
+            'password' => ['required','min:8','regex:/^[A-Za-z0-9]+$/','confirmed'],
+        ], [
+            'name.regex' => 'Nama hanya boleh berisi huruf dan spasi',
+            'password.regex' => 'Password hanya boleh berisi huruf dan angka',
         ]);
 
         // if email already used, return error

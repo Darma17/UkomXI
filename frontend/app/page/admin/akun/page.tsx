@@ -9,8 +9,10 @@ type UserRow = {
   id: number
   name: string
   email: string
-  role: 'admin' | 'customer'
+  role: 'admin' | 'customer' | 'operator'
   profile_image?: string | null
+  tempat_lahir?: string | null
+  tanggal_lahir?: string | null
 }
 
 export default function Akun() {
@@ -39,10 +41,27 @@ export default function Akun() {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [editIndex, setEditIndex] = useState<number | null>(null)
   const [selectedName, setSelectedName] = useState('')
-  const [formData, setFormData] = useState({ name: '', email: '', password: '', role: '' as '' | 'admin' | 'customer' })
-  const [errors, setErrors] = useState({ name: '', email: '', password: '', role: '' })
+  const [formData, setFormData] = useState({ name: '', email: '', password: '', role: '' as '' | 'admin' | 'customer' | 'operator', 
+    tempat_lahir: '', tanggal_lahir: '' 
+  })
+  const [errors, setErrors] = useState({ name: '', email: '', password: '', role: '', 
+    tempat_lahir: '', tanggal_lahir: '' 
+  })
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
+  const today = new Date()
+  const minDate = new Date(today.getFullYear() - 100, today.getMonth(), today.getDate())
+  const maxDate = new Date(today.getFullYear() - 15, today.getMonth(), today.getDate())
+  const fmtDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+  function calcAge(dateStr: string): number | null {
+    if (!dateStr) return null
+    const dob = new Date(dateStr)
+    if (isNaN(dob.getTime())) return null
+    let age = today.getFullYear() - dob.getFullYear()
+    const m = today.getMonth() - dob.getMonth()
+    if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--
+    return age
+  }
 
   // Load users
   async function loadUsers() {
@@ -65,8 +84,12 @@ export default function Akun() {
 
   // Handlers
   const handleOpenAdd = () => {
-    setFormData({ name: '', email: '', password: '', role: '' })
-    setErrors({ name: '', email: '', password: '', role: '' })
+    setFormData({ name: '', email: '', password: '', role: '', 
+     tempat_lahir: '', tanggal_lahir: '' 
+    })
+    setErrors({ name: '', email: '', password: '', role: '', 
+     tempat_lahir: '', tanggal_lahir: '' 
+    })
     setEditIndex(null)
     setPreviewImage(null)
     setPendingFile(null)
@@ -76,8 +99,12 @@ export default function Akun() {
   const handleEdit = (index: number) => {
     const u = users[index]
     setEditIndex(index)
-    setFormData({ name: u.name, email: u.email, password: '', role: u.role })
-    setErrors({ name: '', email: '', password: '', role: '' })
+    setFormData({ name: u.name, email: u.email, password: '', role: u.role as 'admin'|'customer'|'operator', 
+     tempat_lahir: u.tempat_lahir || '', tanggal_lahir: u.tanggal_lahir ? String(u.tanggal_lahir).slice(0,10) : '' 
+    })
+    setErrors({ name: '', email: '', password: '', role: '', 
+     tempat_lahir: '', tanggal_lahir: '' 
+    })
     setPreviewImage(u.profile_image ? `http://localhost:8000/storage/${u.profile_image}` : null)
     setPendingFile(null)
     setShowModal(true)
@@ -92,13 +119,21 @@ export default function Akun() {
   }
 
   const validate = () => {
-    const err = { name: '', email: '', password: '', role: '' }
+    const err = { name: '', email: '', password: '', role: '', 
+     tempat_lahir: '', tanggal_lahir: '' 
+    }
     if (!formData.name) err.name = 'Nama wajib diisi'
     if (!formData.email) err.email = 'Email wajib diisi'
     if (editIndex === null && !formData.password) err.password = 'Password wajib diisi' // password hanya wajib saat tambah
     if (!formData.role) err.role = 'Role wajib dipilih'
+    if (formData.tanggal_lahir) {
+      const age = calcAge(formData.tanggal_lahir)
+      if (age === null || age < 15 || age > 100) err.tanggal_lahir = 'Umur harus 15–100 tahun'
+    }
+    // tempat_lahir optional: isi boleh kosong
     setErrors(err)
-    return !err.name && !err.email && !err.password && !err.role
+    return !err.name && !err.email && !err.password && !err.role && 
+     !err.tanggal_lahir
   }
 
   const handleSave = async () => {
@@ -111,7 +146,11 @@ export default function Akun() {
         const res = await fetch('http://127.0.0.1:8000/api/users', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-          body: JSON.stringify({ name: formData.name, email: formData.email, password: formData.password, role: formData.role }),
+          body: JSON.stringify({ 
+            name: formData.name, email: formData.email, password: formData.password, role: formData.role,
+           tempat_lahir: formData.tempat_lahir || null,
+           tanggal_lahir: formData.tanggal_lahir || null
+          }),
         })
         const created = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(created?.message || 'Gagal menambah akun')
@@ -134,6 +173,8 @@ export default function Akun() {
         fd.append('name', formData.name)
         fd.append('email', formData.email)
         fd.append('role', formData.role)
+        fd.append('tempat_lahir', formData.tempat_lahir || '')
+        fd.append('tanggal_lahir', formData.tanggal_lahir || '')
         if (pendingFile) fd.append('profile_image', pendingFile)
         const res = await fetch(`http://127.0.0.1:8000/api/users/${id}`, {
           method: 'POST',
@@ -207,8 +248,10 @@ export default function Akun() {
             <tr className="text-xs uppercase tracking-wide text-gray-600">
               <th className="p-3 text-left w-12">No</th>
               <th className="p-3 text-left w-16">Foto</th>
-              <th className="p-3 text-left min-w-[220px]">Nama</th>
-              <th className="p-3 text-left min-w-[220px]">Email</th>
+              <th className="p-3 text-left min-w-[160px]">Nama</th>
+              <th className="p-3 text-left min-w-[180px]">Email</th>
+              <th className="p-3 text-left min-w-[140px]">Tempat Lahir</th>
+              <th className="p-3 text-left min-w-[150px]">Tanggal Lahir</th>
               <th className="p-3 text-left w-32">Role</th>
               <th className="p-3 text-center w-28">Aksi</th>
             </tr>
@@ -227,7 +270,17 @@ export default function Akun() {
                   </div>
                 </td>
                 <td className="p-3">{u.name}</td>
-                <td className="p-3">{u.email}</td>
+                <td className="p-3 break-all">{u.email}</td>
+                <td className="p-3">{u.tempat_lahir || '-'}</td>
+                <td className="p-3">
+                  {u.tanggal_lahir
+                    ? (() => {
+                        const d = new Date(u.tanggal_lahir)
+                        if (isNaN(d.getTime())) return '-'
+                        return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
+                      })()
+                    : '-'}
+                </td>
                 <td className="p-3 capitalize">{u.role}</td>
                 <td className="p-3">
                   <div className="flex items-center justify-center gap-2">
@@ -243,7 +296,7 @@ export default function Akun() {
             ))}
             {!loading && users.length === 0 && (
               <tr>
-                <td colSpan={6} className="text-center text-gray-500 py-4">Belum ada data akun</td>
+                <td colSpan={8} className="text-center text-gray-500 py-4">Belum ada data akun</td>
               </tr>
             )}
           </tbody>
@@ -302,14 +355,40 @@ export default function Akun() {
                 <div>
                   <select
                     value={formData.role}
-                    onChange={(e) => setFormData({ ...formData, role: e.target.value as 'admin' | 'customer' })}
+                    onChange={(e) => setFormData({ ...formData, role: e.target.value as 'admin' | 'customer' | 'operator' })}
                     className={`border p-2 rounded-md w-full ${errors.role ? 'border-red-500' : 'border-gray-300'}`}
                   >
                     <option value="">Pilih Role</option>
                     <option value="admin">Admin</option>
                     <option value="customer">Customer</option>
+                    <option value="operator">Operator</option>
                   </select>
                   {errors.role && <p className="text-red-500 text-xs mt-1">{errors.role}</p>}
+                </div>
+
+                {/* Tempat Lahir */}
+                <div>
+                  <input
+                    type="text"
+                    placeholder="Tempat Lahir (opsional)"
+                    value={formData.tempat_lahir}
+                    onChange={(e) => setFormData({ ...formData, tempat_lahir: e.target.value })}
+                    className="border p-2 rounded-md w-full"
+                  />
+                  {errors.tempat_lahir && <p className="text-red-500 text-xs mt-1">{errors.tempat_lahir}</p>}
+                </div>
+
+                {/* Tanggal Lahir */}
+                <div>
+                  <input
+                    type="date"
+                    value={formData.tanggal_lahir}
+                    min={fmtDate(minDate)}
+                    max={fmtDate(maxDate)}
+                    onChange={(e) => setFormData({ ...formData, tanggal_lahir: e.target.value })}
+                    className={`border p-2 rounded-md w-full ${errors.tanggal_lahir ? 'border-red-500' : 'border-gray-300'}`}
+                  />
+                  {errors.tanggal_lahir && <p className="text-red-500 text-xs mt-1">{errors.tanggal_lahir}</p>}
                 </div>
 
                 {/* Upload Image dashed box (seperti product) */}

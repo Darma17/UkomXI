@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation"; // added useRouter
 import { Menu, X, ShoppingCart, User, Search } from "lucide-react";
 import { GoogleLogin, GoogleOAuthProvider } from "@react-oauth/google"
 import axios from "axios";
+import ReCAPTCHA from "react-google-recaptcha"
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
@@ -52,6 +53,7 @@ export default function Navbar() {
   const [loginPassword, setLoginPassword] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginErrorMsg, setLoginErrorMsg] = useState("");
+  const [loginCaptcha, setLoginCaptcha] = useState<string>("");
 
   const suggestDebounceRef = useRef<number | null>(null);
 
@@ -78,13 +80,22 @@ export default function Navbar() {
   async function handlePopupLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoginErrorMsg("");
+    // pastikan captcha sudah diverifikasi
+    if (!loginCaptcha) {
+      setLoginErrorMsg("Silakan verifikasi captcha terlebih dahulu");
+      return;
+    }
     setLoginLoading(true);
 
     try {
       const res = await fetch("http://127.0.0.1:8000/api/login/customer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+        body: JSON.stringify({
+          email: loginEmail,
+          password: loginPassword,
+          captchaToken: loginCaptcha, // diverifikasi di backend
+        }),
       });
       const data = await res.json().catch(() => ({}));
 
@@ -271,6 +282,7 @@ export default function Navbar() {
       // ignore errors but still clear client state
     } finally {
       localStorage.removeItem("authToken");
+      localStorage.removeItem("operatorToken");
       setIsAuthenticated(false);
       setProfile(null);
       setCartCount(0);
@@ -286,6 +298,12 @@ export default function Navbar() {
   const sidebarBg = scrolled ? "bg-white text-gray-800" : "bg-gray-900 text-white";
   const sidebarBorder = scrolled ? "border-gray-200" : "border-gray-700";
   const image = scrolled ? "/images/logo.png" : "/images/logoPutih.png";
+
+  // NEW: helper url foto profil
+  const profileImgUrl =
+    profile?.profile_image
+      ? `http://localhost:8000/storage/${profile.profile_image}`
+      : "/images/dummyImage.jpg";
 
   return (
     <>
@@ -400,17 +418,59 @@ export default function Navbar() {
                   )}
                 </Link>
 
-                {/* === User Icon + Profile Dropdown when authenticated === */}
+                {/* === User / Profile === */}
                 {isAuthenticated ? (
                   <div
                     className="relative"
                     onMouseEnter={() => setShowProfileMenu(true)}
                     onMouseLeave={() => setShowProfileMenu(false)}
                   >
+                    {/* Avatar bulat selalu tampil */}
                     <Link href="/page/profile">
-                      <User className={`w-6 h-6 ${iconColor} cursor-pointer`}/>
+                      <button
+                        type="button"
+                        className="w-7 h-7 mt-2 rounded-full overflow-hidden border border-gray-300 focus:outline-none focus:ring-2 focus:ring-black/30 cursor-pointer"
+                        aria-label="Profile menu"
+                      >
+                        <img
+                          src={profileImgUrl}
+                          alt={profile?.name || "User"}
+                          className="w-full h-full object-cover"
+                        />
+                      </button>
                     </Link>
-                    
+
+                    {/* Dropdown profil saat hover */}
+                    {showProfileMenu && (
+                      <div className="absolute right-0 w-72 bg-white text-gray-800 rounded-xl shadow-lg border border-gray-200 p-4 z-50">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-full overflow-hidden border border-gray-200">
+                            <img
+                              src={profileImgUrl}
+                              alt={profile?.name || "User"}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-gray-900 truncate">
+                              {profile?.name || "User"}
+                            </div>
+                            <div className="text-xs text-gray-500 break-all">
+                              {profile?.email || "-"}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-4">
+                          <button
+                            onClick={handleLogout}
+                            className="w-full px-4 py-2 rounded-md border border-red-500 text-red-600 hover:bg-red-600 hover:text-white transition"
+                          >
+                            Logout
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   // If not logged in: keep hover popup behavior
@@ -458,6 +518,13 @@ export default function Navbar() {
                               onChange={(e) => setLoginPassword(e.target.value)}
                               required
                               className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-black focus:outline-none"
+                            />
+                          </div>
+                          {/* reCAPTCHA */}
+                          <div className="flex justify-center">
+                            <ReCAPTCHA
+                              sitekey="6LcdwggsAAAAAIA8kcX7FrkAXRspjzrv94ycga52"
+                              onChange={(value: string | null) => setLoginCaptcha(value ?? "")}
                             />
                           </div>
                           <div className="flex justify-between items-center text-sm">

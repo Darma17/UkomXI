@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, Suspense } from 'react'
 import Navbar from '@/app/components/Navbar'
 import Footer from '@/app/components/Footer'
 import api from '../../api/api'
@@ -20,7 +20,7 @@ interface Book {
   stock?: number
 }
 
-export default function SearchPage() {
+function SearchInner() {
   const searchParams = useSearchParams()
   const q = searchParams?.get('query') || ''
   const router = useRouter()
@@ -134,7 +134,7 @@ export default function SearchPage() {
             <p className="text-gray-800 mb-4">Untuk menambahkan ke keranjang, silakan login terlebih dahulu.</p>
             <div className="flex justify-center gap-3">
               <button onClick={() => { setShowLoginModal(false); router.push('/page/sigin') }} className="px-4 py-2 bg-black text-white rounded-md">OK</button>
-              <button onClick={() => setShowLoginModal(false)} className="px-4 py-2 border rounded-md">Batal</button>
+              <button onClick={() => setShowLoginModal(false)} className="px-4 py-2 border rounded-md border-gray-800 text-gray-800">Batal</button>
             </div>
           </div>
         </div>
@@ -218,5 +218,13 @@ export default function SearchPage() {
       </div>
       <Footer />
     </>
+  )
+}
+
+export default function SearchPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Memuat...</div>}>
+      <SearchInner />
+    </Suspense>
   )
 }

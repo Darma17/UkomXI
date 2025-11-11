@@ -2,19 +2,19 @@
 
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Eye, EyeOff } from 'lucide-react' // 👁️ ikon untuk show/hide password
+import { Eye, EyeOff } from 'lucide-react'
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google'
+import ReCAPTCHA from 'react-google-recaptcha'
 
 export default function CreateAccount() {
   const router = useRouter()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [passwordConfirm, setPasswordConfirm] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
+  const [captchaValue, setCaptchaValue] = useState<string>('')
 
   useEffect(() => {
     if (!errorMsg) return
@@ -73,7 +73,6 @@ export default function CreateAccount() {
           name: gname || gemail.split('@')[0],
           email: gemail,
           password: randomPass,
-          password_confirmation: randomPass,
           profile_image: gpic,
         }),
       })
@@ -98,19 +97,38 @@ export default function CreateAccount() {
     e.preventDefault()
     setErrorMsg('')
     setLoading(true)
-
-    if (password !== passwordConfirm) {
-      setErrorMsg('Password dan konfirmasi tidak cocok')
+    // Validasi nama: hanya huruf dan spasi (tanpa angka/simbol)
+    const NAME_REGEX = /^[A-Za-zÀ-ÖØ-öø-ÿ\s]+$/u
+    if (!NAME_REGEX.test((name || '').trim())) {
+      setErrorMsg('Nama hanya boleh berisi huruf dan spasi')
+      setLoading(false)
+      return
+    }
+    // validasi password: hanya huruf+angka dan minimal 8
+    const PASS_REGEX = /^[A-Za-z0-9]{8,}$/
+    if (!PASS_REGEX.test(password)) {
+      setErrorMsg('Password harus huruf/angka saja dan minimal 8 karakter')
+      setLoading(false)
+      return
+    }
+    if (!captchaValue) {
+      setErrorMsg('Silakan verifikasi captcha terlebih dahulu')
       setLoading(false)
       return
     }
 
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/register/request', {
+      const res = await fetch('http://localhost:8000/api/register/request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password, password_confirmation: passwordConfirm }),
-      })
+        body: JSON.stringify({
+          name,
+          email,
+          password,
+          password_confirmation: password, // agar lolos rule confirmed di backend
+          captchaToken: captchaValue,
+        }),
+      });
       const data = await res.json().catch(() => ({}))
 
       if (!res.ok) {
@@ -199,7 +217,7 @@ export default function CreateAccount() {
               onChange={(e) => setPassword(e.target.value)}
               type={showPassword ? 'text' : 'password'}
               required
-              placeholder="Masukkan Password Anda"
+              placeholder="Huruf/angka saja, minimal 8 karakter"
               className="w-full px-4 py-2 pr-10 rounded-md bg-white/10 border border-white/30 text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-white/50"
             />
             <button
@@ -210,6 +228,14 @@ export default function CreateAccount() {
             >
               {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
             </button>
+          </div>
+
+          {/* === RECAPTCHA === */}
+          <div className="flex justify-center">
+            <ReCAPTCHA
+              sitekey="6LcdwggsAAAAAIA8kcX7FrkAXRspjzrv94ycga52"
+              onChange={(v) => setCaptchaValue(v ?? '')}
+            />
           </div>
 
           {/* === BUTTON === */}
@@ -229,7 +255,7 @@ export default function CreateAccount() {
                 onSuccess={handleGoogleSuccess}
                 onError={() => setErrorMsg('Login Google gagal')}
               />
-              <span className='text-gray-800 absolute top-138 left-40 bg-white'>SignUp with google</span>
+              {/* <span className='text-gray-800 absolute top-138 left-40 bg-white'>SignUp with google</span> */}
             </GoogleOAuthProvider>
           </div>
         </form>

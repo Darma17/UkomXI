@@ -1,6 +1,5 @@
 'use client'
-
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useState, useRef, Suspense } from 'react'
 import Image from 'next/image'
 import Navbar from '@/app/components/Navbar'
 import Footer from '@/app/components/Footer'
@@ -34,7 +33,7 @@ interface Review {
   created_at?: string | null
 }
 
-export default function ProductDetail() {
+function ProductDetailInner() {
   const searchParams = useSearchParams()
   const id = searchParams?.get('id') || ''
 
@@ -47,6 +46,7 @@ export default function ProductDetail() {
   const [showLoginModal, setShowLoginModal] = useState(false)
   const [adding, setAdding] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
+  const [stockErr, setStockErr] = useState<string | null>(null)
 
   // Favorite state (untuk buku saat ini)
   const [isFav, setIsFav] = useState(false)
@@ -66,6 +66,11 @@ export default function ProductDetail() {
 
   const handleAddToCart = async () => {
     if (!book) return
+    if (quantity > (book.stock ?? 0)) {
+      setStockErr('Jumlah melebihi stok tersedia')
+      setTimeout(() => setStockErr(null), 2500)
+      return
+    }
     const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null
     if (!token) {
       setShowLoginModal(true)
@@ -83,6 +88,10 @@ export default function ProductDetail() {
       if (axios.isAxiosError(err) && err.response?.status === 401) {
         setShowLoginModal(true)
       }
+      if (axios.isAxiosError(err) && err.response?.status === 422) {
+        setStockErr(err.response.data?.message || 'Stok tidak mencukupi')
+        setTimeout(() => setStockErr(null), 2500)
+      }
     } finally {
       setAdding(false)
     }
@@ -91,6 +100,11 @@ export default function ProductDetail() {
   // NEW: Buy Now -> add to cart then go to cart page
   const handleBuyNow = async () => {
     if (!book) return
+    if (quantity > (book.stock ?? 0)) {
+      setStockErr('Jumlah melebihi stok tersedia')
+      setTimeout(() => setStockErr(null), 2500)
+      return
+    }
     const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null
     if (!token) {
       setShowLoginModal(true)
@@ -108,6 +122,10 @@ export default function ProductDetail() {
       console.error(err)
       if (axios.isAxiosError(err) && err.response?.status === 401) {
         setShowLoginModal(true)
+      }
+      if (axios.isAxiosError(err) && err.response?.status === 422) {
+        setStockErr(err.response.data?.message || 'Stok tidak mencukupi')
+        setTimeout(() => setStockErr(null), 2500)
       }
     } finally {
       setAdding(false)
@@ -276,8 +294,15 @@ export default function ProductDetail() {
           </div>
         </div>
       }
+     {stockErr && (
+       <div className="fixed left-1/2 transform -translate-x-1/2 top-4 z-50">
+         <div className="bg-red-600 text-white text-sm font-semibold py-3 px-4 rounded-lg shadow-md">
+           {stockErr}
+         </div>
+       </div>
+     )}
 
-      <div className="min-h-screen bg-white text-gray-900 mt-10">
+      <div className="min-h-screen bg-white text-gray-900 mt-15">
         <div className="max-w-6xl mx-auto px-6 py-10 grid grid-cols-1 md:grid-cols-2 gap-10">
           {/* IMAGE */}
           <div
@@ -327,6 +352,9 @@ export default function ProductDetail() {
                 <span className="text-sm text-gray-700 bg-gray-100 px-4 py-1 rounded-full shadow-sm">
                   Terjual: {Number(book.sold_count ?? 0).toLocaleString('id-ID')}
                 </span>
+                <span className="text-sm text-gray-700 bg-gray-100 px-4 py-1 rounded-full shadow-sm">
+                  Stock: {Number(book.stock ?? 0).toLocaleString('id-ID')}
+                </span>
               </div>
 
               {/* Meta info: Publisher, Publish Year, Category */}
@@ -361,7 +389,17 @@ export default function ProductDetail() {
                   </button>
                   <span className="px-4 py-1 min-w-[48px] text-center">{quantity}</span>
                   <button
-                    onClick={() => setQuantity(q => q + 1)}
+                    onClick={() => {
+                      if (!book) return
+                      const max = book.stock ?? 0
+                      setStockErr(null)
+                      if (quantity + 1 > max) {
+                        setStockErr('Jumlah melebihi stok tersedia')
+                        setTimeout(() => setStockErr(null), 2500)
+                        return
+                      }
+                      setQuantity(q => q + 1)
+                    }}
                     className="px-3 py-1 text-xl font-semibold hover:bg-gray-100"
                   >
                     +
@@ -502,5 +540,14 @@ export default function ProductDetail() {
       </div>
       <Footer />
     </>
+  )
+}
+
+// Wrapper dengan Suspense
+export default function ProductDetailPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Memuat...</div>}>
+      <ProductDetailInner />
+    </Suspense>
   )
 }

@@ -1,9 +1,9 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
-export default function OtpPage() {
+function OtpInner() {
 	const router = useRouter()
 	const searchParams = useSearchParams()
 	const emailParam = searchParams?.get('email') || ''
@@ -96,6 +96,9 @@ export default function OtpPage() {
 				if (purpose === 'admin') {
 					localStorage.setItem('adminToken', token)
 					router.push('/page/admin/dashboard')
+				} else if (purpose === 'operator') {
+					localStorage.setItem('operatorToken', token)
+					router.push('/page/operator/product')
 				} else {
 					localStorage.setItem('authToken', token)
 					window.dispatchEvent(new Event('authChanged'))
@@ -175,5 +178,13 @@ export default function OtpPage() {
 				}
 			`}</style>
 		</div>
+	)
+}
+
+export default function OtpPage() {
+	return (
+		<Suspense fallback={<div className="min-h-screen flex items-center justify-center">Memuat...</div>}>
+			<OtpInner />
+		</Suspense>
 	)
 }

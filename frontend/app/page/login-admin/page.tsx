@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import ReCAPTCHA from 'react-google-recaptcha'
 
 export default function SignIn() {
   const router = useRouter()
@@ -9,6 +10,7 @@ export default function SignIn() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
+  const [captchaValue, setCaptchaValue] = useState<string>('')
 
   useEffect(() => {
     if (!errorMsg) return
@@ -19,12 +21,16 @@ export default function SignIn() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setErrorMsg('')
+    if (!captchaValue) {
+      setErrorMsg('Silakan verifikasi captcha terlebih dahulu')
+      return
+    }
     setLoading(true)
     try {
       const res = await fetch('http://127.0.0.1:8000/api/login/admin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, captchaToken: captchaValue }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -99,9 +105,16 @@ export default function SignIn() {
             />
           </div>
 
+          <div className="flex justify-center">
+            <ReCAPTCHA
+              sitekey="6LcdwggsAAAAAIA8kcX7FrkAXRspjzrv94ycga52"
+              onChange={(v) => setCaptchaValue(v ?? '')}
+            />
+          </div>
+
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !captchaValue}
             className="w-full py-2 cursor-pointer bg-white text-black rounded-md font-semibold hover:bg-gray-200 transition disabled:opacity-60"
           >
             {loading ? 'Loading...' : 'Masuk'}
